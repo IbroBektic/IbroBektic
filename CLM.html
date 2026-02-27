@@ -1,0 +1,1615 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PB CLM — Contract Lifecycle Management</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;500;600;700;800&family=Instrument+Sans:ital,wght@0,400;0,500;0,600;1,400&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+
+<!-- ══════════════════════════════════════════════════════
+     CONFIGURATION — PASTE YOUR VALUES HERE
+     ══════════════════════════════════════════════════════ -->
+<script>
+var CONFIG = {
+  // 1. Paste your Google OAuth Client ID here
+  //    Get it from: console.cloud.google.com → APIs & Services → Credentials
+  GOOGLE_CLIENT_ID: '410646240201-ne1864rcj53cspi9acgs5nh8upui86im.apps.googleusercontent.com',
+
+  // 2. Restrict login to your company domain (e.g. 'yourcompany.com')
+  //    Set to '' to allow any Google account
+  ALLOWED_DOMAIN: '',
+
+  // 3. App name shown in UI
+  APP_NAME: 'PB CLM',
+
+  // 4. Your company name
+  COMPANY_NAME: 'PowerBack'
+};
+</script>
+<!-- ══════════════════════════════════════════════════════ -->
+
+<!-- Google Identity Services -->
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<!-- Google API Client -->
+<script src="https://apis.google.com/js/api.js" async defer></script>
+
+<style>
+:root {
+  --ink:      #0d0f15;
+  --ink2:     #141720;
+  --ink3:     #1b1f2e;
+  --ink4:     #222738;
+  --line:     #2a2f45;
+  --line2:    #363d56;
+  --gold:     #e8a825;
+  --gold2:    #f5c842;
+  --gold-dim: rgba(232,168,37,0.12);
+  --gold-glow:0 0 24px rgba(232,168,37,0.22);
+  --slate:    #8891b0;
+  --slate2:   #5a6278;
+  --slate3:   #3d4259;
+  --snow:     #eef0f8;
+  --snow2:    #c8cce0;
+  --green:    #2dd98f;
+  --red:      #f05050;
+  --blue:     #4d80f0;
+  --purple:   #9b72f5;
+  --teal:     #30c9b0;
+  --r:        7px;
+  --r2:       13px;
+  --sh:       0 4px 24px rgba(0,0,0,0.5);
+  --sh2:      0 16px 56px rgba(0,0,0,0.7);
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;background:var(--ink);color:var(--snow);font-family:'Instrument Sans',sans-serif;font-size:13px;overflow:hidden}
+input,select,textarea,button{font-family:inherit;font-size:inherit}
+::-webkit-scrollbar{width:5px;height:5px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--ink4);border-radius:3px}
+::-webkit-scrollbar-thumb:hover{background:var(--line2)}
+
+/* ── LOGIN SCREEN ─────────────────────────────────────── */
+#login-screen {
+  position:fixed;inset:0;
+  background:var(--ink);
+  display:flex;align-items:center;justify-content:center;
+  z-index:9999;
+  transition:opacity .4s, transform .4s;
+}
+#login-screen.hiding {
+  opacity:0;
+  transform:scale(1.02);
+  pointer-events:none;
+}
+
+.login-bg {
+  position:absolute;inset:0;overflow:hidden;
+}
+.login-bg-orb {
+  position:absolute;border-radius:50%;filter:blur(80px);opacity:0.35;
+  animation:orb-drift 8s ease-in-out infinite alternate;
+}
+@keyframes orb-drift {
+  from{transform:translate(0,0) scale(1)}
+  to{transform:translate(30px,20px) scale(1.1)}
+}
+
+.login-card {
+  position:relative;z-index:1;
+  width:420px;
+  background:var(--ink2);
+  border:1px solid var(--line2);
+  border-radius:20px;
+  padding:44px 40px 36px;
+  box-shadow:var(--sh2);
+  animation:card-in .6s cubic-bezier(.22,1,.36,1) both;
+}
+@keyframes card-in {
+  from{opacity:0;transform:translateY(24px) scale(.97)}
+  to{opacity:1;transform:translateY(0) scale(1)}
+}
+
+.login-logo {
+  display:flex;align-items:center;gap:12px;margin-bottom:32px;justify-content:center;
+}
+.login-gem {
+  width:44px;height:44px;border-radius:12px;
+  background:linear-gradient(135deg,var(--gold),#c87820);
+  display:flex;align-items:center;justify-content:center;
+  box-shadow:0 4px 20px rgba(232,168,37,0.45);
+}
+.login-gem svg{width:22px;height:22px}
+.login-brand {
+  font-family:'Syne',sans-serif;font-size:26px;font-weight:800;color:var(--snow);
+}
+.login-brand em{color:var(--gold);font-style:normal}
+
+.login-tagline {
+  text-align:center;font-size:14px;color:var(--slate);margin-bottom:32px;line-height:1.5;
+}
+.login-tagline strong{color:var(--snow2);font-weight:500}
+
+.login-divider {
+  display:flex;align-items:center;gap:12px;margin:20px 0;
+}
+.login-divider::before,.login-divider::after {
+  content:'';flex:1;height:1px;background:var(--line);
+}
+.login-divider span{font-size:11px;color:var(--slate2)}
+
+/* Google Sign-in Button */
+.google-btn {
+  width:100%;padding:13px 20px;
+  border-radius:var(--r2);
+  background:var(--ink3);
+  border:1px solid var(--line2);
+  display:flex;align-items:center;justify-content:center;gap:12px;
+  cursor:pointer;
+  font-size:13px;font-weight:600;color:var(--snow);
+  transition:all .2s;
+  position:relative;overflow:hidden;
+}
+.google-btn::before {
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(232,168,37,.08),transparent);
+  opacity:0;transition:opacity .2s;
+}
+.google-btn:hover{border-color:var(--gold);box-shadow:var(--gold-glow)}
+.google-btn:hover::before{opacity:1}
+.google-btn svg{flex-shrink:0}
+
+.google-btn-loading {
+  opacity:.6;cursor:default;
+}
+.spinner {
+  width:18px;height:18px;border:2px solid var(--line2);
+  border-top-color:var(--gold);border-radius:50%;
+  animation:spin .7s linear infinite;
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.login-domain-note {
+  margin-top:16px;padding:10px 14px;
+  background:var(--ink3);border:1px solid var(--line);border-radius:var(--r);
+  font-size:11px;color:var(--slate2);text-align:center;
+  display:none;
+}
+.login-domain-note.visible{display:block}
+.login-domain-note strong{color:var(--gold2)}
+
+.login-error {
+  margin-top:14px;padding:11px 14px;
+  background:rgba(240,80,80,.1);border:1px solid rgba(240,80,80,.3);
+  border-radius:var(--r);font-size:12px;color:#f87878;
+  text-align:center;display:none;
+}
+.login-error.visible{display:block}
+
+.login-footer {
+  margin-top:28px;text-align:center;font-size:10.5px;color:var(--slate2);
+  line-height:1.6;
+}
+.login-footer a{color:var(--slate);text-decoration:none}
+.login-footer a:hover{color:var(--gold2)}
+
+/* ── SETUP OVERLAY (first time) ───────────────────────── */
+#setup-overlay {
+  position:fixed;inset:0;background:rgba(0,0,0,.75);backdrop-filter:blur(8px);
+  z-index:8888;display:none;align-items:center;justify-content:center;
+}
+#setup-overlay.on{display:flex}
+.setup-card {
+  background:var(--ink2);border:1px solid var(--line2);border-radius:20px;
+  width:500px;padding:36px 36px 28px;box-shadow:var(--sh2);
+  animation:card-in .3s ease both;
+}
+.setup-step {
+  display:none;
+}
+.setup-step.on{display:block}
+.setup-progress {
+  display:flex;gap:6px;margin-bottom:28px;
+}
+.setup-pip {
+  height:3px;flex:1;border-radius:2px;background:var(--line);transition:background .3s;
+}
+.setup-pip.done{background:var(--gold)}
+
+/* ── MAIN APP ─────────────────────────────────────────── */
+.app{display:flex;height:100vh;opacity:0;transition:opacity .4s}
+.app.ready{opacity:1}
+
+/* SIDEBAR */
+.sb{width:232px;flex-shrink:0;background:var(--ink2);border-right:1px solid var(--line);display:flex;flex-direction:column}
+.sb-head{padding:16px 14px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px}
+.logo-gem{width:30px;height:30px;border-radius:7px;background:linear-gradient(135deg,var(--gold),#c87820);display:flex;align-items:center;justify-content:center;box-shadow:0 2px 10px rgba(232,168,37,.35);flex-shrink:0}
+.logo-gem svg{width:16px;height:16px}
+.logo-name{font-family:'Syne',sans-serif;font-size:17px;font-weight:800;color:var(--snow)}
+.logo-name em{color:var(--gold);font-style:normal}
+
+.sb-nav{flex:1;overflow-y:auto;padding:10px 8px}
+.sb-lbl{font-size:9px;font-weight:700;letter-spacing:1.8px;text-transform:uppercase;color:var(--slate2);padding:10px 10px 4px}
+.ni{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--r);cursor:pointer;color:var(--slate);font-size:12.5px;font-weight:400;transition:all .15s;position:relative;margin-bottom:1px;user-select:none}
+.ni:hover{background:var(--ink3);color:var(--snow2)}
+.ni.on{background:var(--gold-dim);color:var(--gold2);font-weight:500}
+.ni.on::before{content:'';position:absolute;left:0;top:25%;bottom:25%;width:2.5px;background:var(--gold);border-radius:2px}
+.ni-ico{font-size:14px;width:18px;text-align:center;flex-shrink:0}
+.nb{margin-left:auto;font-size:9px;font-weight:700;padding:1px 6px;border-radius:10px}
+.nb-gold{background:var(--gold);color:var(--ink)}
+.nb-red{background:var(--red);color:#fff}
+
+.sb-footer{padding:10px 8px;border-top:1px solid var(--line)}
+.user-row{display:flex;align-items:center;gap:9px;padding:8px 10px;border-radius:var(--r);cursor:pointer;transition:background .15s}
+.user-row:hover{background:var(--ink3)}
+.av{width:28px;height:28px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;color:#fff;flex-shrink:0}
+.u-meta{flex:1;min-width:0}
+.u-name{font-size:12px;font-weight:600;color:var(--snow);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.u-role{font-size:10px;color:var(--slate2)}
+.sign-out-btn{font-size:10px;color:var(--slate2);cursor:pointer;padding:2px 6px;border-radius:4px;transition:all .1s}
+.sign-out-btn:hover{background:rgba(240,80,80,.1);color:var(--red)}
+
+/* TOPBAR */
+.main{flex:1;display:flex;flex-direction:column;overflow:hidden;min-width:0}
+.top{height:52px;flex-shrink:0;background:var(--ink2);border-bottom:1px solid var(--line);display:flex;align-items:center;gap:10px;padding:0 22px}
+.top-title{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;color:var(--snow);flex:1}
+.top-title small{color:var(--slate2);font-family:'Instrument Sans',sans-serif;font-weight:400;font-size:12px;margin-left:6px}
+.srch{display:flex;align-items:center;gap:7px;background:var(--ink3);border:1px solid var(--line);border-radius:var(--r);padding:6px 12px;width:240px;transition:border-color .15s}
+.srch:focus-within{border-color:var(--gold)}
+.srch input{background:none;border:none;outline:none;color:var(--snow);font-size:12px;flex:1;width:100%}
+.srch input::placeholder{color:var(--slate2)}
+
+.btn{display:inline-flex;align-items:center;gap:6px;padding:6px 14px;border-radius:var(--r);font-size:12px;font-weight:500;cursor:pointer;border:none;transition:all .15s;white-space:nowrap}
+.btn-gold{background:var(--gold);color:var(--ink);font-weight:700}
+.btn-gold:hover{background:var(--gold2);box-shadow:var(--gold-glow)}
+.btn-ghost{background:var(--ink3);color:var(--snow2);border:1px solid var(--line)}
+.btn-ghost:hover{border-color:var(--line2);background:var(--ink4)}
+.btn-outline{background:none;color:var(--slate);border:1px solid var(--line)}
+.btn-outline:hover{color:var(--snow2);border-color:var(--line2)}
+.btn-danger{background:rgba(240,80,80,.12);color:var(--red);border:1px solid rgba(240,80,80,.25)}
+.btn-danger:hover{background:rgba(240,80,80,.22)}
+.btn-green{background:rgba(45,217,143,.12);color:var(--green);border:1px solid rgba(45,217,143,.25)}
+.btn-green:hover{background:rgba(45,217,143,.22)}
+
+/* SCREENS */
+.screens{flex:1;overflow:hidden;position:relative}
+.screen{display:none;height:100%;overflow-y:auto}
+.screen.on{display:block}
+.editor-screen.on{display:flex;flex-direction:column}
+
+/* CARDS */
+.card{background:var(--ink2);border:1px solid var(--line);border-radius:var(--r2)}
+.card-head{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+.card-title{font-family:'Syne',sans-serif;font-size:12.5px;font-weight:700;color:var(--snow);flex:1}
+.card-body{padding:14px 16px}
+
+/* PILLS */
+.pill{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;font-size:10px;font-weight:600}
+.pill::before{content:'';width:5px;height:5px;border-radius:50%}
+.pill-draft{background:rgba(90,98,120,.18);color:var(--slate)}
+.pill-draft::before{background:var(--slate)}
+.pill-review{background:rgba(77,128,240,.18);color:#7ca3ff}
+.pill-review::before{background:var(--blue)}
+.pill-negotiating{background:rgba(155,114,245,.18);color:#b89bff}
+.pill-negotiating::before{background:var(--purple)}
+.pill-approved{background:rgba(45,217,143,.18);color:var(--green)}
+.pill-approved::before{background:var(--green)}
+.pill-executed{background:rgba(45,217,143,.25);color:#52e8a8}
+.pill-executed::before{background:#52e8a8}
+.pill-expired{background:rgba(240,80,80,.18);color:#f87878}
+.pill-expired::before{background:var(--red)}
+.tag{display:inline-flex;align-items:center;padding:2px 7px;border-radius:4px;font-size:10px;font-weight:600}
+.tg{background:var(--gold-dim);color:var(--gold2)}
+.tg-b{background:rgba(77,128,240,.15);color:#7ca3ff}
+.tg-g{background:rgba(45,217,143,.15);color:var(--green)}
+.tg-p{background:rgba(155,114,245,.15);color:#b89bff}
+.tg-r{background:rgba(240,80,80,.15);color:#f87878}
+.tg-t{background:rgba(48,201,176,.15);color:var(--teal)}
+.tg-s{background:rgba(90,98,120,.12);color:var(--slate)}
+
+/* DASHBOARD */
+.dash{padding:22px}
+.kpi-row{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:20px}
+.kpi{background:var(--ink2);border:1px solid var(--line);border-radius:var(--r2);padding:18px 18px 14px;position:relative;overflow:hidden;transition:border-color .2s,transform .2s;cursor:default}
+.kpi:hover{border-color:var(--line2);transform:translateY(-1px)}
+.kpi-accent{position:absolute;top:0;left:0;right:0;height:2px}
+.kpi-lbl{font-size:9.5px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;color:var(--slate2);margin-bottom:9px}
+.kpi-val{font-family:'Syne',sans-serif;font-size:30px;font-weight:800;color:var(--snow);line-height:1;margin-bottom:5px}
+.kpi-sub{font-size:10.5px;color:var(--slate2)}
+.kpi-sub .up{color:var(--green)}
+.kpi-sub .dn{color:var(--red)}
+.kpi-icon{position:absolute;right:16px;top:50%;transform:translateY(-50%);font-size:28px;opacity:.08}
+.dash-grid{display:grid;grid-template-columns:1fr 320px;gap:14px}
+.act-item{display:flex;gap:11px;padding:9px 0;border-bottom:1px solid var(--line)}
+.act-item:last-child{border-bottom:none}
+.act-dot{width:7px;height:7px;border-radius:50%;flex-shrink:0;margin-top:5px}
+.act-txt{font-size:12px;color:var(--slate);line-height:1.5;flex:1}
+.act-txt strong{color:var(--snow2);font-weight:500}
+.act-t{font-size:10px;color:var(--slate2);white-space:nowrap}
+.pipe-row{display:flex;gap:3px;margin-top:10px}
+.pipe-seg{flex:1;display:flex;flex-direction:column;gap:4px;align-items:center}
+.pipe-bar{width:100%;height:5px;border-radius:3px}
+.pipe-n{font-family:'Syne',sans-serif;font-size:13px;font-weight:800;color:var(--snow)}
+.pipe-l{font-size:9px;color:var(--slate2)}
+.uc-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+.uc-item:last-child{border-bottom:none}
+.uc-ico{width:32px;height:32px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0}
+.uc-info{flex:1;min-width:0}
+.uc-name{font-size:12px;font-weight:500;color:var(--snow);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.uc-sub{font-size:10px;color:var(--slate2);margin-top:1px}
+
+/* CONTRACTS TABLE */
+.cl-wrap{padding:22px}
+.filter-strip{display:flex;align-items:center;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.fchip{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:20px;font-size:11px;font-weight:500;cursor:pointer;border:1px solid var(--line);background:var(--ink2);color:var(--slate);transition:all .15s}
+.fchip:hover{border-color:var(--line2);color:var(--snow2)}
+.fchip.on{background:var(--gold-dim);border-color:var(--gold);color:var(--gold2)}
+.sel{background:var(--ink3);border:1px solid var(--line);border-radius:var(--r);padding:5px 10px;color:var(--snow);outline:none;font-size:12px;cursor:pointer}
+.ct{width:100%;border-collapse:collapse}
+.ct thead th{text-align:left;padding:8px 12px;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:1.1px;color:var(--slate2);background:var(--ink3);border-bottom:1px solid var(--line)}
+.ct thead th:first-child{border-radius:7px 0 0 0}
+.ct thead th:last-child{border-radius:0 7px 0 0}
+.ct tbody tr{border-bottom:1px solid var(--line);cursor:pointer;transition:background .1s}
+.ct tbody tr:hover{background:var(--ink3)}
+.ct tbody tr:last-child{border-bottom:none}
+.ct td{padding:11px 12px;vertical-align:middle}
+.cn-wrap{display:flex;align-items:center;gap:9px}
+.ct-ico{width:30px;height:30px;border-radius:7px;display:flex;align-items:center;justify-content:center;font-size:14px;flex-shrink:0}
+.cn-name{font-size:12.5px;font-weight:500;color:var(--snow)}
+.cn-party{font-size:10px;color:var(--slate2);margin-top:1px}
+.val-cell{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--snow2)}
+.dt-cell{font-size:11px;color:var(--slate)}
+.ov-wrap{display:flex;align-items:center;gap:6px}
+.row-acts{display:flex;gap:3px;opacity:0;transition:opacity .1s}
+.ct tbody tr:hover .row-acts{opacity:1}
+.ra{width:25px;height:25px;border-radius:5px;background:var(--ink4);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:11px;color:var(--slate);transition:all .1s}
+.ra:hover{background:var(--ink2);color:var(--snow2);border-color:var(--line2)}
+
+/* EDITOR */
+.ed-toolbar{padding:8px 16px;border-bottom:1px solid var(--line);background:var(--ink2);display:flex;align-items:center;gap:6px;flex-wrap:wrap;flex-shrink:0}
+.tb-grp{display:flex;gap:2px;padding:0 8px;border-right:1px solid var(--line)}
+.tb-grp:last-of-type{border-right:none}
+.tb-btn{width:27px;height:27px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:12px;color:var(--slate);background:none;border:1px solid transparent;transition:all .12s}
+.tb-btn:hover{background:var(--ink3);color:var(--snow2);border-color:var(--line)}
+.tb-btn.on{background:var(--gold-dim);color:var(--gold2);border-color:rgba(232,168,37,.35)}
+.ed-body{flex:1;display:flex;overflow:hidden}
+.ed-doc{flex:1;padding:40px 56px;overflow-y:auto;background:var(--ink)}
+.doc-paper{max-width:700px;margin:0 auto;background:#fff;color:#1c1c1c;padding:56px 64px;border-radius:4px;min-height:880px;font-family:'Instrument Sans',sans-serif;font-size:13px;line-height:1.75;box-shadow:0 8px 48px rgba(0,0,0,.6)}
+.doc-h{font-family:'Syne',sans-serif;font-size:21px;font-weight:800;color:#111;border:none;outline:none;width:100%;background:transparent;margin-bottom:4px}
+.doc-meta-line{font-size:11px;color:#888;margin-bottom:22px;padding-bottom:16px;border-bottom:2px solid #eee}
+.doc-sec{font-family:'Syne',sans-serif;font-size:13.5px;font-weight:800;color:#1a1a1a;margin:22px 0 8px;text-transform:uppercase;letter-spacing:.6px}
+.doc-p{margin-bottom:11px;color:#2a2a2a}
+.clause-box{background:#f5f7ff;border-left:3px solid #4d80f0;padding:11px 15px;margin:12px 0;border-radius:0 6px 6px 0;font-size:12px;color:#333}
+.doc-fld{display:inline-block;background:#fff8e1;border:1.5px dashed #e8a825;padding:1px 8px;border-radius:4px;font-size:11px;color:#92400e;cursor:pointer;font-family:'JetBrains Mono',monospace}
+.doc-fld:hover{background:#fef3c7}
+.ed-side{width:274px;flex-shrink:0;border-left:1px solid var(--line);background:var(--ink2);display:flex;flex-direction:column;overflow:hidden}
+.side-tabs{display:flex;border-bottom:1px solid var(--line);flex-shrink:0}
+.stab{flex:1;padding:10px 6px;text-align:center;font-size:11px;font-weight:500;color:var(--slate2);cursor:pointer;border-bottom:2px solid transparent;transition:all .15s}
+.stab.on{color:var(--gold2);border-bottom-color:var(--gold)}
+.stab:hover:not(.on){color:var(--snow2)}
+.spanel{display:none;padding:14px;overflow-y:auto;flex:1}
+.spanel.on{display:block}
+.spanel-comments{display:none;flex-direction:column;flex:1;overflow:hidden}
+.spanel-comments.on{display:flex}
+.prop-lbl{font-size:9px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--slate2);margin-bottom:5px;margin-top:12px}
+.prop-lbl:first-child{margin-top:0}
+.p-inp{width:100%;background:var(--ink3);border:1px solid var(--line);border-radius:var(--r);padding:7px 10px;color:var(--snow);outline:none;transition:border-color .15s;font-size:12px}
+.p-inp:focus{border-color:var(--gold)}
+.p-sel{width:100%;background:var(--ink3);border:1px solid var(--line);border-radius:var(--r);padding:7px 10px;color:var(--snow);outline:none;font-size:12px}
+.wf-step{display:flex;gap:10px;padding:10px 0;position:relative}
+.wf-step:not(:last-child)::after{content:'';position:absolute;left:13px;top:32px;bottom:-4px;width:1px;background:var(--line2)}
+.wf-dot{width:27px;height:27px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:800;flex-shrink:0;position:relative;z-index:1}
+.wd-done{background:var(--green);color:#fff}
+.wd-cur{background:var(--gold);color:var(--ink);animation:pulse-wf 2s infinite}
+.wd-pend{background:var(--ink4);border:1px solid var(--line2);color:var(--slate2)}
+@keyframes pulse-wf{0%,100%{box-shadow:0 0 0 0 rgba(232,168,37,.4)}50%{box-shadow:0 0 0 7px rgba(232,168,37,0)}}
+.wf-info{flex:1}
+.wf-name{font-size:12px;font-weight:500;color:var(--snow)}
+.wf-role{font-size:10px;color:var(--slate2);margin-top:1px}
+.wf-status{font-size:10px;margin-top:3px}
+.comment-feed{flex:1;overflow-y:auto;padding:12px 14px}
+.cm{padding:9px 0;border-bottom:1px solid var(--line)}
+.cm:last-child{border-bottom:none}
+.cm-hd{display:flex;align-items:center;gap:7px;margin-bottom:4px}
+.cm-name{font-size:11px;font-weight:600;color:var(--snow2)}
+.cm-t{font-size:10px;color:var(--slate2);margin-left:auto}
+.cm-body{font-size:11px;color:var(--slate);line-height:1.5}
+.cm-inp-wrap{padding:10px 14px;border-top:1px solid var(--line);flex-shrink:0}
+.cm-inp{width:100%;background:var(--ink3);border:1px solid var(--line);border-radius:var(--r);padding:8px 10px;color:var(--snow);resize:none;height:56px;outline:none;font-size:11.5px}
+.cm-inp:focus{border-color:var(--gold)}
+
+/* ANALYTICS */
+.an-wrap{padding:22px}
+.an-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}
+.chart-card{background:var(--ink2);border:1px solid var(--line);border-radius:var(--r2)}
+.cc-head{padding:13px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center}
+.cc-title{font-family:'Syne',sans-serif;font-size:12.5px;font-weight:700;color:var(--snow);flex:1}
+.cc-body{padding:16px}
+.bar-chart{display:flex;align-items:flex-end;gap:8px;height:130px}
+.bc-col{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px}
+.bc-bar{width:100%;border-radius:4px 4px 0 0;cursor:pointer;min-height:4px}
+.bc-bar:hover{opacity:.75}
+.bc-lbl{font-size:9px;color:var(--slate2)}
+.bc-v{font-size:9px;color:var(--slate)}
+.donut-wrap{display:flex;align-items:center;gap:20px}
+.donut-chart{position:relative;width:120px;height:120px;flex-shrink:0}
+.donut-chart svg{transform:rotate(-90deg)}
+.donut-mid{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center}
+.donut-mid-v{font-family:'Syne',sans-serif;font-size:20px;font-weight:800;color:var(--snow)}
+.donut-mid-l{font-size:9px;color:var(--slate2)}
+.legend-item{display:flex;align-items:center;gap:7px;padding:4px 0}
+.leg-dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+.leg-name{font-size:11px;color:var(--slate);flex:1}
+.leg-v{font-size:11px;font-family:'JetBrains Mono',monospace;color:var(--snow2)}
+.spark-list{display:flex;flex-direction:column;gap:9px}
+.spark-row{display:flex;align-items:center;gap:10px}
+.spark-lbl{font-size:11px;color:var(--slate);width:130px;flex-shrink:0}
+.spark-track{flex:1;height:5px;background:var(--ink4);border-radius:3px;overflow:hidden}
+.spark-fill{height:100%;border-radius:3px}
+.spark-v{font-size:10.5px;font-family:'JetBrains Mono',monospace;color:var(--snow2);width:40px;text-align:right;flex-shrink:0}
+
+/* TEMPLATES */
+.tpl-wrap{padding:22px}
+.tpl-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:12px;margin-top:14px}
+.tpl-card{background:var(--ink2);border:1px solid var(--line);border-radius:var(--r2);padding:16px;cursor:pointer;transition:all .2s;display:flex;flex-direction:column;gap:9px}
+.tpl-card:hover{border-color:var(--gold);transform:translateY(-2px);box-shadow:0 6px 24px rgba(232,168,37,.12)}
+.tpl-ico{width:40px;height:40px;border-radius:9px;display:flex;align-items:center;justify-content:center;font-size:19px}
+.tpl-name{font-family:'Syne',sans-serif;font-size:13px;font-weight:700;color:var(--snow)}
+.tpl-desc{font-size:11px;color:var(--slate2);line-height:1.45}
+.tpl-footer{display:flex;gap:5px;flex-wrap:wrap}
+
+/* MODALS */
+.overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);backdrop-filter:blur(5px);display:none;align-items:center;justify-content:center;z-index:999}
+.overlay.on{display:flex}
+.modal{background:var(--ink2);border:1px solid var(--line2);border-radius:var(--r2);width:500px;max-height:90vh;overflow-y:auto;box-shadow:var(--sh2);animation:card-in .2s ease both}
+.modal-head{padding:18px 22px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center}
+.modal-title{font-family:'Syne',sans-serif;font-size:15px;font-weight:700;color:var(--snow);flex:1}
+.modal-x{width:27px;height:27px;border-radius:6px;background:var(--ink3);border:1px solid var(--line);display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;color:var(--slate);transition:all .1s}
+.modal-x:hover{background:var(--ink4);color:var(--snow)}
+.modal-body{padding:18px 22px}
+.modal-foot{padding:12px 22px;border-top:1px solid var(--line);display:flex;justify-content:flex-end;gap:7px}
+.fg{margin-bottom:13px}
+.fl{display:block;font-size:9.5px;font-weight:700;text-transform:uppercase;letter-spacing:.9px;color:var(--slate2);margin-bottom:5px}
+.fi{width:100%;background:var(--ink3);border:1px solid var(--line);border-radius:var(--r);padding:7px 11px;color:var(--snow);outline:none;transition:border-color .15s;font-size:12px}
+.fi:focus{border-color:var(--gold)}
+.fs{width:100%;background:var(--ink3);border:1px solid var(--line);border-radius:var(--r);padding:7px 11px;color:var(--snow);outline:none;font-size:12px}
+.frow{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+
+/* DRIVE PICKER */
+.drive-file-row{display:flex;align-items:center;gap:12px;padding:10px 14px;border-bottom:1px solid var(--line);cursor:pointer;transition:background .1s}
+.drive-file-row:hover{background:var(--ink3)}
+.drive-file-row:last-child{border-bottom:none}
+
+/* TOAST */
+.toast-stack{position:fixed;bottom:22px;right:22px;z-index:9998;display:flex;flex-direction:column;gap:7px}
+.toast{background:var(--ink2);border:1px solid var(--line2);border-radius:var(--r);padding:11px 15px;display:flex;align-items:center;gap:9px;min-width:270px;box-shadow:var(--sh);animation:card-in .25s ease;font-size:12px}
+.toast-ok{border-color:rgba(45,217,143,.35)}
+.toast-info{border-color:rgba(77,128,240,.35)}
+.toast-warn{border-color:rgba(232,168,37,.35)}
+.toast-err{border-color:rgba(240,80,80,.35)}
+.t-ico{font-size:15px}
+.t-msg{flex:1;color:var(--snow2)}
+
+/* MISC */
+.divider{height:1px;background:var(--line);margin:12px 0}
+.prog{height:3px;background:var(--ink4);border-radius:2px;overflow:hidden;margin-bottom:14px}
+.prog-fill{height:100%;border-radius:2px}
+@keyframes fade-up{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.ani{animation:fade-up .3s ease both}
+.d1{animation-delay:.05s}.d2{animation-delay:.1s}.d3{animation-delay:.15s}
+
+/* Google Drive status badge */
+.drive-status{display:flex;align-items:center;gap:6px;font-size:11px;color:var(--slate2);padding:4px 10px;border-radius:20px;background:var(--ink3);border:1px solid var(--line)}
+.drive-status-dot{width:6px;height:6px;border-radius:50%;background:var(--slate2)}
+.drive-status.connected .drive-status-dot{background:var(--green);box-shadow:0 0 6px var(--green)}
+.drive-status.connected{color:var(--green);border-color:rgba(45,217,143,.25)}
+</style>
+</head>
+<body>
+
+<!-- ══════════════════════════════════════════════════
+     LOGIN SCREEN
+══════════════════════════════════════════════════ -->
+<div id="login-screen">
+  <div class="login-bg">
+    <div class="login-bg-orb" style="width:500px;height:500px;background:radial-gradient(circle,rgba(232,168,37,.4),transparent);top:-100px;left:-100px;animation-delay:0s"></div>
+    <div class="login-bg-orb" style="width:400px;height:400px;background:radial-gradient(circle,rgba(77,128,240,.3),transparent);bottom:-80px;right:-80px;animation-delay:2s;animation-direction:alternate-reverse"></div>
+    <div class="login-bg-orb" style="width:300px;height:300px;background:radial-gradient(circle,rgba(155,114,245,.25),transparent);top:40%;right:20%;animation-delay:4s"></div>
+  </div>
+
+  <div class="login-card">
+    <div class="login-logo">
+      <div class="login-gem">
+        <svg viewBox="0 0 22 22" fill="none">
+          <path d="M11 2L18 6.5V15.5L11 20L4 15.5V6.5L11 2Z" fill="rgba(255,255,255,0.95)"/>
+          <path d="M11 7L14.5 9.25V13.75L11 16L7.5 13.75V9.25L11 7Z" fill="rgba(255,255,255,0.35)"/>
+        </svg>
+      </div>
+      <div class="login-brand">PB <em>CLM</em></div>
+    </div>
+
+    <div class="login-tagline">
+      Contract lifecycle management for <strong id="company-name-display">your company</strong>.<br>
+      Sign in with your Google account to continue.
+    </div>
+
+    <button class="google-btn" id="google-signin-btn" onclick="startGoogleSignIn()">
+      <svg width="20" height="20" viewBox="0 0 24 24">
+        <path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/>
+        <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/>
+        <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
+        <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
+      </svg>
+      Continue with Google
+    </button>
+
+    <div class="login-domain-note" id="domain-note"></div>
+    <div class="login-error" id="login-error"></div>
+
+    <div class="login-footer">
+      Your contracts are stored in your own Google Drive.<br>
+      PB CLM never stores your data on external servers.<br><br>
+      <a href="#">Privacy Policy</a> · <a href="#">Terms of Service</a>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════
+     MAIN APP
+══════════════════════════════════════════════════ -->
+<div class="app" id="main-app">
+
+  <!-- SIDEBAR -->
+  <aside class="sb">
+    <div class="sb-head">
+      <div class="logo-gem">
+        <svg viewBox="0 0 16 16" fill="none">
+          <path d="M8 2L13 5.5V10.5L8 14L3 10.5V5.5L8 2Z" fill="rgba(255,255,255,0.9)"/>
+          <path d="M8 6L10.5 7.5V10.5L8 12L5.5 10.5V7.5L8 6Z" fill="rgba(255,255,255,0.4)"/>
+        </svg>
+      </div>
+      <div class="logo-name">PB <em>CLM</em></div>
+    </div>
+
+    <nav class="sb-nav">
+      <div class="sb-lbl">Workspace</div>
+      <div class="ni on" data-screen="dash"      onclick="goScreen('dash')">      <span class="ni-ico">⬡</span>Dashboard</div>
+      <div class="ni"    data-screen="contracts" onclick="goScreen('contracts')"> <span class="ni-ico">📄</span>Contracts<span class="nb nb-gold">247</span></div>
+      <div class="ni"    data-screen="editor"    onclick="goScreen('editor')">    <span class="ni-ico">✏️</span>Editor</div>
+      <div class="ni"    data-screen="templates" onclick="goScreen('templates')"> <span class="ni-ico">🗂</span>Templates</div>
+
+      <div class="sb-lbl">Workflow</div>
+      <div class="ni"    data-screen="approvals" onclick="goScreen('approvals')"> <span class="ni-ico">✅</span>Approvals<span class="nb nb-red">5</span></div>
+      <div class="ni"    data-screen="analytics" onclick="goScreen('analytics')"> <span class="ni-ico">📊</span>Analytics</div>
+
+      <div class="sb-lbl">Admin</div>
+      <div class="ni"    data-screen="team"         onclick="goScreen('team')">        <span class="ni-ico">👥</span>Team</div>
+      <div class="ni"    data-screen="integrations" onclick="goScreen('integrations')"><span class="ni-ico">🔗</span>Integrations</div>
+      <div class="ni"    data-screen="settings"     onclick="goScreen('settings')">    <span class="ni-ico">⚙️</span>Settings</div>
+    </nav>
+
+    <div class="sb-footer">
+      <div class="user-row">
+        <div class="av" id="user-avatar" style="background:linear-gradient(135deg,#e8a825,#c87820)">?</div>
+        <div class="u-meta">
+          <div class="u-name" id="user-name">Signing in…</div>
+          <div class="u-role" id="user-email"></div>
+        </div>
+        <div class="sign-out-btn" onclick="signOut()" title="Sign out">⏏</div>
+      </div>
+      <div style="padding:4px 10px 2px">
+        <div class="drive-status" id="drive-status">
+          <div class="drive-status-dot"></div>
+          <span>Drive: connecting…</span>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- MAIN -->
+  <div class="main">
+    <div class="top">
+      <div class="top-title" id="ttl">Dashboard <small id="tsub">Overview</small></div>
+      <div class="srch"><span style="color:var(--slate2)">🔍</span><input placeholder="Search contracts…" id="search-input"></div>
+      <div id="drive-sync-btn" class="btn btn-ghost" style="font-size:11px;display:none" onclick="syncWithDrive()">🔄 Sync Drive</div>
+      <button class="btn btn-ghost" onclick="openModal('import-modal')" style="font-size:11px">📥 Import</button>
+      <button class="btn btn-gold"  onclick="openModal('nm')">＋ New Contract</button>
+    </div>
+
+    <div class="screens">
+
+      <!-- DASHBOARD -->
+      <div class="screen on" id="s-dash">
+      <div class="dash">
+        <div class="kpi-row">
+          <div class="kpi ani"><div class="kpi-accent" style="background:linear-gradient(90deg,var(--gold),transparent)"></div><div class="kpi-icon">📄</div><div class="kpi-lbl">Total Contracts</div><div class="kpi-val">247</div><div class="kpi-sub"><span class="up">↑ 12%</span> vs last month</div></div>
+          <div class="kpi ani d1"><div class="kpi-accent" style="background:linear-gradient(90deg,var(--green),transparent)"></div><div class="kpi-icon">✅</div><div class="kpi-lbl">Executed This Month</div><div class="kpi-val">38</div><div class="kpi-sub"><span class="up">↑ 8%</span> vs last month</div></div>
+          <div class="kpi ani d2"><div class="kpi-accent" style="background:linear-gradient(90deg,var(--red),transparent)"></div><div class="kpi-icon">⏳</div><div class="kpi-lbl">Pending Approval</div><div class="kpi-val">14</div><div class="kpi-sub"><span class="dn">5 overdue</span></div></div>
+          <div class="kpi ani d3"><div class="kpi-accent" style="background:linear-gradient(90deg,var(--teal),transparent)"></div><div class="kpi-icon">💰</div><div class="kpi-lbl">Total Value</div><div class="kpi-val">$4.2M</div><div class="kpi-sub"><span class="up">↑ 22%</span> YTD</div></div>
+        </div>
+        <div class="dash-grid">
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div class="card ani d1">
+              <div class="card-head"><div class="card-title">Recent Activity</div><button class="btn btn-outline" style="font-size:11px;padding:4px 10px">View all →</button></div>
+              <div class="card-body" style="padding:6px 14px">
+                <div class="act-item"><div class="act-dot" style="background:var(--green);box-shadow:0 0 6px var(--green)"></div><div class="act-txt"><strong>Acme Corp MSA</strong> was executed by Sarah Johnson</div><div class="act-t">2m ago</div></div>
+                <div class="act-item"><div class="act-dot" style="background:var(--gold);box-shadow:0 0 6px var(--gold)"></div><div class="act-txt"><strong>Vendor NDA — TechFlow Inc.</strong> sent for legal review</div><div class="act-t">18m ago</div></div>
+                <div class="act-item"><div class="act-dot" style="background:var(--blue);box-shadow:0 0 6px var(--blue)"></div><div class="act-txt"><strong>Employment Agreement</strong> created from template</div><div class="act-t">1h ago</div></div>
+                <div class="act-item"><div class="act-dot" style="background:var(--red);box-shadow:0 0 6px var(--red)"></div><div class="act-txt"><strong>AWS Enterprise Agreement</strong> expires in 14 days</div><div class="act-t">3h ago</div></div>
+                <div class="act-item"><div class="act-dot" style="background:var(--purple);box-shadow:0 0 6px var(--purple)"></div><div class="act-txt"><strong>SaaS License — Stripe</strong> redlined by counterparty</div><div class="act-t">5h ago</div></div>
+              </div>
+            </div>
+            <div class="card ani d2">
+              <div class="card-head"><div class="card-title">Contract Pipeline</div></div>
+              <div class="card-body">
+                <div class="pipe-row">
+                  <div class="pipe-seg"><div class="pipe-bar" style="background:var(--slate2)"></div><div class="pipe-n">18</div><div class="pipe-l">Draft</div></div>
+                  <div class="pipe-seg"><div class="pipe-bar" style="background:var(--purple)"></div><div class="pipe-n">9</div><div class="pipe-l">Negotiating</div></div>
+                  <div class="pipe-seg"><div class="pipe-bar" style="background:var(--gold)"></div><div class="pipe-n">14</div><div class="pipe-l">Review</div></div>
+                  <div class="pipe-seg"><div class="pipe-bar" style="background:var(--blue)"></div><div class="pipe-n">7</div><div class="pipe-l">Approved</div></div>
+                  <div class="pipe-seg"><div class="pipe-bar" style="background:var(--green)"></div><div class="pipe-n">199</div><div class="pipe-l">Executed</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <div class="card ani d2">
+              <div class="card-head"><div class="card-title">Needs Your Approval</div><span class="tag tg">5 pending</span></div>
+              <div class="card-body" style="padding:6px 14px">
+                <div class="uc-item"><div class="uc-ico" style="background:rgba(240,80,80,.12)">📋</div><div class="uc-info"><div class="uc-name">Vendor Services Agreement</div><div class="uc-sub">Cloudbase Solutions</div></div><div style="font-size:10px;font-weight:600;color:var(--red)">Today</div></div>
+                <div class="uc-item"><div class="uc-ico" style="background:rgba(155,114,245,.12)">📝</div><div class="uc-info"><div class="uc-name">Software License Renewal</div><div class="uc-sub">Adobe Inc. · $48k/yr</div></div><div style="font-size:10px;font-weight:600;color:var(--gold)">2 days</div></div>
+                <div class="uc-item"><div class="uc-ico" style="background:rgba(45,217,143,.12)">🤝</div><div class="uc-info"><div class="uc-name">Partnership Agreement</div><div class="uc-sub">Nexus Group</div></div><div style="font-size:10px;font-weight:600;color:var(--gold)">3 days</div></div>
+              </div>
+            </div>
+            <div class="card ani d3">
+              <div class="card-head"><div class="card-title">Expiring Soon</div><span class="tag tg-r">11 at risk</span></div>
+              <div class="card-body" style="padding:6px 14px">
+                <div class="uc-item"><div class="uc-ico" style="background:rgba(240,80,80,.1)">⚠️</div><div class="uc-info"><div class="uc-name">AWS Enterprise Agreement</div><div class="uc-sub">$220k/yr</div></div><div style="font-size:10px;font-weight:600;color:var(--red)">7 days</div></div>
+                <div class="uc-item"><div class="uc-ico" style="background:rgba(232,168,37,.1)">🔁</div><div class="uc-info"><div class="uc-name">Salesforce CRM</div><div class="uc-sub">$84k/yr</div></div><div style="font-size:10px;font-weight:600;color:var(--gold)">21 days</div></div>
+                <div class="uc-item"><div class="uc-ico" style="background:rgba(45,217,143,.1)">☁️</div><div class="uc-info"><div class="uc-name">Cloudflare Pro</div><div class="uc-sub">$12k/yr</div></div><div style="font-size:10px;font-weight:600;color:var(--slate)">36 days</div></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      </div>
+
+      <!-- CONTRACTS -->
+      <div class="screen" id="s-contracts">
+      <div class="cl-wrap">
+        <div class="filter-strip">
+          <div class="fchip on" onclick="fc(this)">All <span style="background:var(--gold);color:var(--ink);padding:0 5px;border-radius:8px;font-size:9px;margin-left:3px">247</span></div>
+          <div class="fchip" onclick="fc(this)">Active</div>
+          <div class="fchip" onclick="fc(this)">In Review</div>
+          <div class="fchip" onclick="fc(this)">Expiring Soon</div>
+          <div class="fchip" onclick="fc(this)">Drafts</div>
+          <div style="margin-left:auto;display:flex;gap:7px;align-items:center">
+            <select class="sel"><option>All Types</option><option>NDA</option><option>Vendor</option><option>Sales</option><option>Employment</option><option>MSA</option></select>
+            <button class="btn btn-ghost" style="font-size:11px" onclick="exportContracts()">⬇ Export</button>
+            <button class="btn btn-gold" onclick="openModal('nm')">＋ New</button>
+          </div>
+        </div>
+        <div class="card">
+          <table class="ct">
+            <thead><tr>
+              <th style="width:34px"><input type="checkbox" style="accent-color:var(--gold)"></th>
+              <th>Contract</th><th>Type</th><th>Status</th><th>Value</th><th>Effective</th><th>Expires</th><th>Owner</th><th style="width:70px"></th>
+            </tr></thead>
+            <tbody id="ct-body"></tbody>
+          </table>
+        </div>
+      </div>
+      </div>
+
+      <!-- EDITOR -->
+      <div class="screen editor-screen" id="s-editor">
+        <div class="ed-toolbar">
+          <div class="tb-grp">
+            <div class="tb-btn on" onclick="this.classList.toggle('on')"><b>B</b></div>
+            <div class="tb-btn"    onclick="this.classList.toggle('on')"><i>I</i></div>
+            <div class="tb-btn"    onclick="this.classList.toggle('on')"><u>U</u></div>
+          </div>
+          <div class="tb-grp">
+            <div class="tb-btn">H₁</div><div class="tb-btn">H₂</div><div class="tb-btn">¶</div>
+          </div>
+          <div class="tb-grp">
+            <div class="tb-btn">≡</div><div class="tb-btn">⒈</div><div class="tb-btn">→</div>
+          </div>
+          <div class="tb-grp">
+            <div class="tb-btn" style="width:auto;padding:0 8px;font-size:11px" onclick="toast('Clause inserted','ok')">📋 Clause</div>
+            <div class="tb-btn" style="width:auto;padding:0 8px;font-size:11px" onclick="toast('Field added','info')">[ Field ]</div>
+            <div class="tb-btn" style="width:auto;padding:0 8px;font-size:11px" onclick="toast('Signature block added','ok')">✍ Sig</div>
+          </div>
+          <div class="tb-grp">
+            <div class="tb-btn on" style="width:auto;padding:0 8px;font-size:11px">⊕ Track</div>
+            <div class="tb-btn"    style="width:auto;padding:0 8px;font-size:11px">⊞ Compare</div>
+          </div>
+          <div style="margin-left:auto;display:flex;gap:6px">
+            <button class="btn btn-ghost" style="font-size:11px" onclick="saveToDrive()">💾 Save to Drive</button>
+            <button class="btn btn-ghost" style="font-size:11px" onclick="toast('Sent for review','info')">📤 Send for Review</button>
+            <button class="btn btn-gold"  style="font-size:11px" onclick="openModal('am')">✅ Submit for Approval</button>
+          </div>
+        </div>
+        <div class="ed-body">
+          <div class="ed-doc">
+            <div class="doc-paper">
+              <input class="doc-h" value="Mutual Non-Disclosure Agreement">
+              <div class="doc-meta-line">Contract #NDA-2024-089 · Created Jan 15, 2024 · Version 3 · <span id="doc-drive-badge" style="color:#4285F4">📁 Saved to Drive</span></div>
+              <div class="doc-sec">1. Parties</div>
+              <p class="doc-p">This Mutual Non-Disclosure Agreement is entered into as of <span class="doc-fld" onclick="editFld(this)">EFFECTIVE DATE</span>, by and between <span class="doc-fld" onclick="editFld(this)">COMPANY NAME</span>, a <span class="doc-fld" onclick="editFld(this)">STATE</span> corporation, and <span class="doc-fld" onclick="editFld(this)">COUNTERPARTY NAME</span>.</p>
+              <div class="doc-sec">2. Confidential Information</div>
+              <p class="doc-p">For purposes of this Agreement, "Confidential Information" means any and all information or data that has or could have commercial value in the business in which the Disclosing Party is engaged.</p>
+              <div class="clause-box">If Confidential Information is in written form, the Disclosing Party shall label materials with the word "Confidential." If transmitted orally, written confirmation shall be provided promptly.</div>
+              <div class="doc-sec">3. Obligations</div>
+              <p class="doc-p">The Receiving Party agrees to: (a) hold the Confidential Information in strict confidence; (b) not disclose to any third parties; (c) use solely for the Purpose; and (d) protect using at least the same degree of care as its own confidential information.</p>
+              <div class="doc-sec">4. Term</div>
+              <p class="doc-p">This Agreement shall remain in effect for <span class="doc-fld" onclick="editFld(this)">TERM LENGTH</span> from the Effective Date, unless earlier terminated upon <span class="doc-fld" onclick="editFld(this)">NOTICE DAYS</span> days written notice.</p>
+              <div style="margin-top:38px;display:grid;grid-template-columns:1fr 1fr;gap:36px">
+                <div style="border-top:1px solid #ccc;padding-top:8px;font-size:11.5px;color:#555"><div style="font-weight:700;margin-bottom:6px;font-family:Syne,sans-serif;font-size:12px">COMPANY</div>By: _________________________<br><br>Name: ______________________<br><br>Title: _______________________<br><br>Date: ________________________</div>
+                <div style="border-top:1px solid #ccc;padding-top:8px;font-size:11.5px;color:#555"><div style="font-weight:700;margin-bottom:6px;font-family:Syne,sans-serif;font-size:12px">RECIPIENT</div>By: _________________________<br><br>Name: ______________________<br><br>Title: _______________________<br><br>Date: ________________________</div>
+              </div>
+            </div>
+          </div>
+          <div class="ed-side">
+            <div class="side-tabs">
+              <div class="stab on"  onclick="stab('props',this)">Properties</div>
+              <div class="stab"     onclick="stab('flow',this)">Workflow</div>
+              <div class="stab"     onclick="stab('comments',this)">Comments</div>
+            </div>
+            <div class="spanel on" id="sp-props">
+              <div class="prop-lbl">Contract Name</div><input class="p-inp" value="Mutual NDA — TechFlow Inc.">
+              <div class="prop-lbl">Type</div><select class="p-sel"><option>NDA</option><option>Vendor</option><option>MSA</option><option>Employment</option></select>
+              <div class="prop-lbl">Counterparty</div><input class="p-inp" value="TechFlow Inc.">
+              <div class="prop-lbl">Value</div><input class="p-inp" value="$0 (NDA)">
+              <div class="prop-lbl">Effective Date</div><input class="p-inp" type="date" value="2024-01-15">
+              <div class="prop-lbl">Expiration Date</div><input class="p-inp" type="date" value="2025-01-15">
+              <div class="prop-lbl">Owner</div><select class="p-sel" id="contract-owner-sel"><option>Jordan Davis</option><option>Sarah Johnson</option></select>
+              <div class="prop-lbl">Tags</div>
+              <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:4px">
+                <span class="tag tg-b">NDA</span><span class="tag tg-p">Mutual</span>
+                <span class="tag tg-s" style="cursor:pointer" onclick="toast('Tag added','ok')">＋ Tag</span>
+              </div>
+              <div class="divider" style="margin-top:14px"></div>
+              <div style="display:flex;align-items:center;gap:6px;margin-top:2px">
+                <span style="font-size:11px;color:var(--slate2)">📁 Drive location:</span>
+                <span style="font-size:10px;color:var(--teal)" id="drive-file-path">PB CLM/NDAs/</span>
+              </div>
+            </div>
+            <div class="spanel" id="sp-flow">
+              <div style="font-size:11px;color:var(--slate2);margin-bottom:10px">Approval workflow · Step 2 of 4</div>
+              <div class="prog"><div class="prog-fill" style="width:50%;background:var(--gold)"></div></div>
+              <div class="wf-step"><div class="wf-dot wd-done">✓</div><div class="wf-info"><div class="wf-name" id="wf-name-1">You</div><div class="wf-role">Contract Owner</div><div class="wf-status" style="color:var(--green)">✓ Approved · Jan 15</div></div></div>
+              <div class="wf-step"><div class="wf-dot wd-cur">2</div><div class="wf-info"><div class="wf-name">Sarah Johnson</div><div class="wf-role">Legal Counsel</div><div class="wf-status" style="color:var(--gold)">⏳ In review since Jan 16</div></div></div>
+              <div class="wf-step"><div class="wf-dot wd-pend">3</div><div class="wf-info"><div class="wf-name">Mike Rodriguez</div><div class="wf-role">Finance</div><div class="wf-status" style="color:var(--slate2)">Waiting</div></div></div>
+              <div class="wf-step"><div class="wf-dot wd-pend">4</div><div class="wf-info"><div class="wf-name">CEO Sign-off</div><div class="wf-role">Executive</div><div class="wf-status" style="color:var(--slate2)">Waiting</div></div></div>
+              <div class="divider"></div>
+              <button class="btn btn-ghost" style="width:100%;justify-content:center;font-size:11px" onclick="toast('Reminder sent','info')">📩 Send Reminder</button>
+            </div>
+            <div class="spanel-comments" id="sp-comments">
+              <div class="comment-feed">
+                <div class="cm"><div class="cm-hd"><div class="av" style="width:22px;height:22px;font-size:9px;background:linear-gradient(135deg,#4d80f0,#9b72f5)">SJ</div><div class="cm-name">Sarah Johnson</div><div class="cm-t">2h ago</div></div><div class="cm-body">Section 3(b) needs clarification — scope of "third parties" should exclude affiliates.</div></div>
+                <div class="cm"><div class="cm-hd"><div class="av" style="width:22px;height:22px;font-size:9px;background:linear-gradient(135deg,#e8a825,#c87820)" id="comment-user-av">?</div><div class="cm-name" id="comment-user-name">You</div><div class="cm-t">Jan 15</div></div><div class="cm-body">Created from NDA template v4. Standard mutual terms apply.</div></div>
+              </div>
+              <div class="cm-inp-wrap">
+                <textarea class="cm-inp" placeholder="Add a comment…" id="comment-input"></textarea>
+                <div style="display:flex;justify-content:flex-end;margin-top:6px">
+                  <button class="btn btn-gold" style="font-size:11px;padding:5px 12px" onclick="postComment()">Post</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TEMPLATES -->
+      <div class="screen" id="s-templates">
+      <div class="tpl-wrap">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="font-size:11px;color:var(--slate2)">9 templates available</div>
+          <div style="margin-left:auto;display:flex;gap:7px">
+            <select class="sel"><option>All Categories</option><option>Legal</option><option>Sales</option><option>HR</option></select>
+            <button class="btn btn-gold" onclick="toast('Template builder coming soon','info')">＋ Create Template</button>
+          </div>
+        </div>
+        <div class="tpl-grid" id="tpl-grid"></div>
+      </div>
+      </div>
+
+      <!-- ANALYTICS -->
+      <div class="screen" id="s-analytics">
+      <div class="an-wrap">
+        <div style="display:flex;align-items:center;gap:10px">
+          <div style="font-size:11px;color:var(--slate2)">Last 12 months</div>
+          <div style="margin-left:auto"><button class="btn btn-ghost" style="font-size:11px">⬇ Export</button></div>
+        </div>
+        <div class="kpi-row" style="margin-top:14px">
+          <div class="kpi"><div class="kpi-accent" style="background:linear-gradient(90deg,var(--blue),transparent)"></div><div class="kpi-lbl">Avg Cycle Time</div><div class="kpi-val" style="font-size:26px">12.4<span style="font-size:13px;color:var(--slate2);font-weight:400"> days</span></div><div class="kpi-sub"><span class="up">↓ 18%</span> improvement</div></div>
+          <div class="kpi"><div class="kpi-accent" style="background:linear-gradient(90deg,var(--green),transparent)"></div><div class="kpi-lbl">Renewal Rate</div><div class="kpi-val" style="font-size:26px">87<span style="font-size:13px;color:var(--slate2);font-weight:400">%</span></div><div class="kpi-sub"><span class="up">↑ 5%</span> vs prior year</div></div>
+          <div class="kpi"><div class="kpi-accent" style="background:linear-gradient(90deg,var(--gold),transparent)"></div><div class="kpi-lbl">At-Risk Renewals</div><div class="kpi-val" style="font-size:26px">11</div><div class="kpi-sub"><span class="dn">↑ 3</span> from last month</div></div>
+          <div class="kpi"><div class="kpi-accent" style="background:linear-gradient(90deg,var(--purple),transparent)"></div><div class="kpi-lbl">Clause Accept Rate</div><div class="kpi-val" style="font-size:26px">74<span style="font-size:13px;color:var(--slate2);font-weight:400">%</span></div><div class="kpi-sub"><span class="up">↑ 9%</span> vs last year</div></div>
+        </div>
+        <div class="an-grid">
+          <div class="chart-card"><div class="cc-head"><div class="cc-title">Contracts Executed — Monthly</div></div><div class="cc-body"><div class="bar-chart" id="bar-chart"></div></div></div>
+          <div class="chart-card"><div class="cc-head"><div class="cc-title">By Type</div></div><div class="cc-body"><div class="donut-wrap"><div class="donut-chart"><svg width="120" height="120" viewBox="0 0 120 120"><circle cx="60" cy="60" r="46" fill="none" stroke="var(--ink4)" stroke-width="16"/><circle cx="60" cy="60" r="46" fill="none" stroke="var(--gold)" stroke-width="16" stroke-dasharray="102 191" stroke-dashoffset="0"/><circle cx="60" cy="60" r="46" fill="none" stroke="var(--purple)" stroke-width="16" stroke-dasharray="58 191" stroke-dashoffset="-102"/><circle cx="60" cy="60" r="46" fill="none" stroke="var(--green)" stroke-width="16" stroke-dasharray="42 191" stroke-dashoffset="-160"/><circle cx="60" cy="60" r="46" fill="none" stroke="var(--blue)" stroke-width="16" stroke-dasharray="28 191" stroke-dashoffset="-202"/></svg><div class="donut-mid"><div class="donut-mid-v">247</div><div class="donut-mid-l">Total</div></div></div><div style="flex:1"><div class="legend-item"><div class="leg-dot" style="background:var(--gold)"></div><div class="leg-name">Vendor/MSA</div><div class="leg-v">89</div></div><div class="legend-item"><div class="leg-dot" style="background:var(--purple)"></div><div class="leg-name">NDAs</div><div class="leg-v">51</div></div><div class="legend-item"><div class="leg-dot" style="background:var(--green)"></div><div class="leg-name">Sales</div><div class="leg-v">63</div></div><div class="legend-item"><div class="leg-dot" style="background:var(--blue)"></div><div class="leg-name">Employment</div><div class="leg-v">44</div></div></div></div></div></div>
+          <div class="chart-card"><div class="cc-head"><div class="cc-title">Avg Cycle Time by Type</div></div><div class="cc-body"><div class="spark-list"><div class="spark-row"><div class="spark-lbl">NDA</div><div class="spark-track"><div class="spark-fill" style="width:28%;background:var(--gold)"></div></div><div class="spark-v">3.8d</div></div><div class="spark-row"><div class="spark-lbl">Employment</div><div class="spark-track"><div class="spark-fill" style="width:52%;background:var(--purple)"></div></div><div class="spark-v">7.2d</div></div><div class="spark-row"><div class="spark-lbl">Sales</div><div class="spark-track"><div class="spark-fill" style="width:67%;background:var(--green)"></div></div><div class="spark-v">9.1d</div></div><div class="spark-row"><div class="spark-lbl">Vendor/MSA</div><div class="spark-track"><div class="spark-fill" style="width:84%;background:var(--blue)"></div></div><div class="spark-v">11.4d</div></div><div class="spark-row"><div class="spark-lbl">Enterprise SaaS</div><div class="spark-track"><div class="spark-fill" style="width:100%;background:var(--red)"></div></div><div class="spark-v">18.7d</div></div></div></div></div>
+          <div class="chart-card"><div class="cc-head"><div class="cc-title">Upcoming Renewals</div><span class="tag tg-r">11 at risk</span></div><div class="cc-body" style="padding:0"><table style="width:100%;border-collapse:collapse"><thead><tr><th style="font-size:9.5px;text-transform:uppercase;letter-spacing:1px;color:var(--slate2);padding:8px 12px;text-align:left;border-bottom:1px solid var(--line)">Contract</th><th style="font-size:9.5px;text-transform:uppercase;letter-spacing:1px;color:var(--slate2);padding:8px 12px;text-align:left;border-bottom:1px solid var(--line)">Value</th><th style="font-size:9.5px;text-transform:uppercase;letter-spacing:1px;color:var(--slate2);padding:8px 12px;text-align:left;border-bottom:1px solid var(--line)">Expires</th></tr></thead><tbody><tr style="border-bottom:1px solid var(--line)"><td style="padding:8px 12px;font-size:11.5px;color:var(--snow)">AWS Enterprise</td><td style="padding:8px 12px;font-size:11px;font-family:JetBrains Mono,monospace;color:var(--snow2)">$220k</td><td style="padding:8px 12px"><span class="tag tg-r">7 days</span></td></tr><tr style="border-bottom:1px solid var(--line)"><td style="padding:8px 12px;font-size:11.5px;color:var(--snow)">Salesforce CRM</td><td style="padding:8px 12px;font-size:11px;font-family:JetBrains Mono,monospace;color:var(--snow2)">$84k</td><td style="padding:8px 12px"><span class="tag tg">21 days</span></td></tr><tr><td style="padding:8px 12px;font-size:11.5px;color:var(--snow)">Nexus Group MSA</td><td style="padding:8px 12px;font-size:11px;font-family:JetBrains Mono,monospace;color:var(--snow2)">$500k</td><td style="padding:8px 12px"><span class="tag tg-g">4 months</span></td></tr></tbody></table></div></div>
+        </div>
+      </div>
+      </div>
+
+      <!-- APPROVALS -->
+      <div class="screen" id="s-approvals">
+      <div style="padding:22px">
+        <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+          <div style="font-family:Syne,sans-serif;font-size:15px;font-weight:700;color:var(--snow)">Pending Your Approval</div>
+          <span class="tag tg">5 items</span>
+        </div>
+        <div class="card" style="overflow:hidden" id="ap-list"></div>
+      </div>
+      </div>
+
+      <!-- TEAM -->
+      <div class="screen" id="s-team">
+      <div style="padding:22px">
+        <div style="display:flex;align-items:center;margin-bottom:18px">
+          <div style="font-size:11px;color:var(--slate2)">Members with access to PB CLM</div>
+          <div style="margin-left:auto"><button class="btn btn-gold" onclick="openModal('invite-modal')">＋ Invite Member</button></div>
+        </div>
+        <div class="card" id="team-list"></div>
+      </div>
+      </div>
+
+      <!-- INTEGRATIONS -->
+      <div class="screen" id="s-integrations">
+      <div style="padding:22px">
+        <div style="font-size:11px;color:var(--slate2);margin-bottom:18px">Connect tools to sync contracts and automate workflows.</div>
+        <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px">
+          <div class="card" style="padding:20px">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px"><div style="width:40px;height:40px;border-radius:10px;background:rgba(45,217,143,.12);display:flex;align-items:center;justify-content:center;font-size:22px">📁</div><div><div style="font-size:13px;font-weight:600;color:var(--snow)">Google Drive</div><div style="font-size:10px;color:var(--slate2)">Primary storage</div></div><span class="tag tg-g" style="margin-left:auto" id="drive-integration-status">Connected</span></div>
+            <div style="font-size:11px;color:var(--slate2);margin-bottom:12px">All contracts stored in your Drive under <strong style="color:var(--snow2)">PB CLM/</strong> folder.</div>
+            <button class="btn btn-ghost" style="font-size:11px;width:100%;justify-content:center" onclick="openDriveFolder()">Open Drive Folder →</button>
+          </div>
+          <div class="card" style="padding:20px">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px"><div style="width:40px;height:40px;border-radius:10px;background:rgba(77,128,240,.12);display:flex;align-items:center;justify-content:center;font-size:22px">✍️</div><div><div style="font-size:13px;font-weight:600;color:var(--snow)">DocuSign</div><div style="font-size:10px;color:var(--slate2)">E-signature</div></div><span class="tag tg-s" style="margin-left:auto">Not connected</span></div>
+            <div style="font-size:11px;color:var(--slate2);margin-bottom:12px">Send contracts for e-signature directly from PB CLM.</div>
+            <button class="btn btn-gold" style="font-size:11px;width:100%;justify-content:center" onclick="toast('DocuSign OAuth starting…','info')">Connect →</button>
+          </div>
+          <div class="card" style="padding:20px">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px"><div style="width:40px;height:40px;border-radius:10px;background:rgba(232,168,37,.12);display:flex;align-items:center;justify-content:center;font-size:22px">💬</div><div><div style="font-size:13px;font-weight:600;color:var(--snow)">Slack</div><div style="font-size:10px;color:var(--slate2)">Notifications</div></div><span class="tag tg-s" style="margin-left:auto">Not connected</span></div>
+            <div style="font-size:11px;color:var(--slate2);margin-bottom:12px">Get contract alerts and approvals in Slack.</div>
+            <button class="btn btn-gold" style="font-size:11px;width:100%;justify-content:center" onclick="toast('Slack OAuth starting…','info')">Connect →</button>
+          </div>
+          <div class="card" style="padding:20px">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px"><div style="width:40px;height:40px;border-radius:10px;background:rgba(240,80,80,.12);display:flex;align-items:center;justify-content:center;font-size:22px">☁️</div><div><div style="font-size:13px;font-weight:600;color:var(--snow)">Salesforce</div><div style="font-size:10px;color:var(--slate2)">CRM sync</div></div><span class="tag tg-s" style="margin-left:auto">Not connected</span></div>
+            <div style="font-size:11px;color:var(--slate2);margin-bottom:12px">Link contracts to CRM deals automatically.</div>
+            <button class="btn btn-gold" style="font-size:11px;width:100%;justify-content:center" onclick="toast('Salesforce OAuth starting…','info')">Connect →</button>
+          </div>
+        </div>
+      </div>
+      </div>
+
+      <!-- SETTINGS -->
+      <div class="screen" id="s-settings">
+      <div style="padding:22px;max-width:680px">
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-head"><div class="card-title">Organization</div></div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:12px">
+            <div class="fg"><label class="fl">Company Name</label><input class="fi" id="setting-company" value="PowerBack"></div>
+            <div class="fg"><label class="fl">Allowed Email Domain (leave blank for any Google account)</label><input class="fi" id="setting-domain" placeholder="e.g. yourcompany.com"></div>
+            <div class="fg"><label class="fl">Default Timezone</label><select class="fs"><option>Eastern (ET)</option><option>Pacific (PT)</option><option>UTC</option></select></div>
+            <button class="btn btn-gold" style="align-self:flex-start" onclick="saveSettings()">Save Changes</button>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-head"><div class="card-title">Google Drive Storage</div></div>
+          <div class="card-body">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:12px">
+              <span style="font-size:11px;color:var(--slate2)">Storage location:</span>
+              <span style="font-size:12px;color:var(--teal);font-family:JetBrains Mono,monospace" id="drive-folder-path">My Drive / PB CLM /</span>
+              <button class="btn btn-ghost" style="font-size:11px;padding:4px 10px" onclick="openDriveFolder()">Open →</button>
+            </div>
+            <div style="font-size:11px;color:var(--slate2);line-height:1.7">
+              All contracts are saved as files in your Google Drive. Contract metadata (parties, dates, status) is stored in a Google Sheet at <span style="color:var(--snow2)">PB CLM/contracts_db.xlsx</span>. You own all your data — PB CLM never copies it to any external server.
+            </div>
+          </div>
+        </div>
+        <div class="card" style="margin-bottom:14px">
+          <div class="card-head"><div class="card-title">Notifications</div></div>
+          <div class="card-body" style="display:flex;flex-direction:column;gap:10px">
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:12px;color:var(--snow2)"><input type="checkbox" checked style="accent-color:var(--gold)"> Contract expiry reminders (30, 14, 7 days)</label>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:12px;color:var(--snow2)"><input type="checkbox" checked style="accent-color:var(--gold)"> Approval requests assigned to me</label>
+            <label style="display:flex;align-items:center;gap:10px;cursor:pointer;font-size:12px;color:var(--snow2)"><input type="checkbox" checked style="accent-color:var(--gold)"> New comments on my contracts</label>
+            <button class="btn btn-gold" style="align-self:flex-start;margin-top:4px" onclick="toast('Notification preferences saved','ok')">Save</button>
+          </div>
+        </div>
+      </div>
+      </div>
+
+    </div><!-- /screens -->
+  </div><!-- /main -->
+</div><!-- /app -->
+
+<!-- ═══════════ MODALS ═══════════ -->
+
+<!-- New Contract -->
+<div class="overlay" id="nm">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">Create New Contract</div><div class="modal-x" onclick="closeModal('nm')">✕</div></div>
+    <div class="modal-body">
+      <div class="fg"><label class="fl">Contract Name</label><input class="fi" id="new-name" placeholder="e.g. Vendor Agreement — Acme Corp"></div>
+      <div class="frow">
+        <div class="fg"><label class="fl">Type</label><select class="fs" id="new-type"><option>NDA</option><option>Vendor Agreement</option><option>Sales Contract</option><option>Employment</option><option>MSA</option></select></div>
+        <div class="fg"><label class="fl">Start From</label><select class="fs"><option>Blank document</option><option>Template</option><option>Import from Drive</option></select></div>
+      </div>
+      <div class="fg"><label class="fl">Counterparty</label><input class="fi" id="new-party" placeholder="Company or individual name"></div>
+      <div class="frow">
+        <div class="fg"><label class="fl">Contract Value</label><input class="fi" id="new-value" placeholder="$0.00"></div>
+        <div class="fg"><label class="fl">Target Close Date</label><input class="fi" type="date" id="new-date"></div>
+      </div>
+      <div style="background:var(--ink3);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;font-size:11px;color:var(--slate2);display:flex;align-items:center;gap:8px;margin-top:4px">
+        <span>📁</span> Will be saved to <strong style="color:var(--snow2)" id="new-drive-path">PB CLM / Contracts /</strong> in your Google Drive
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('nm')">Cancel</button><button class="btn btn-gold" onclick="createContract()">Create &amp; Open →</button></div>
+  </div>
+</div>
+
+<!-- Approval -->
+<div class="overlay" id="am">
+  <div class="modal">
+    <div class="modal-head"><div class="modal-title">Submit for Approval</div><div class="modal-x" onclick="closeModal('am')">✕</div></div>
+    <div class="modal-body">
+      <div class="fg"><label class="fl">Workflow</label><select class="fs"><option>Standard Legal Review</option><option>Fast-Track (Legal Only)</option><option>Finance + Legal + Executive</option></select></div>
+      <div class="fg"><label class="fl">Message to Reviewers</label><textarea class="fi" style="height:70px;resize:none" placeholder="Add context…"></textarea></div>
+      <div class="fg"><label class="fl">Due Date</label><input class="fi" type="date"></div>
+      <div style="background:var(--ink3);border:1px solid var(--line);border-radius:var(--r);padding:11px;font-size:11px;color:var(--slate)">
+        <div style="font-weight:600;color:var(--snow2);margin-bottom:5px">Reviewers notified via email:</div>
+        Sarah Johnson (Legal) → Mike Rodriguez (Finance) → CEO Sign-off
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('am')">Cancel</button><button class="btn btn-gold" onclick="submitApproval()">Submit →</button></div>
+  </div>
+</div>
+
+<!-- Import -->
+<div class="overlay" id="import-modal">
+  <div class="modal" style="width:430px">
+    <div class="modal-head"><div class="modal-title">Import Contract</div><div class="modal-x" onclick="closeModal('import-modal')">✕</div></div>
+    <div class="modal-body" style="display:flex;flex-direction:column;gap:10px">
+      <div class="drive-file-row" style="border-radius:var(--r2);border:1px solid var(--line)" onclick="openModal('gdrive-modal');closeModal('import-modal')">
+        <span style="font-size:22px">📁</span>
+        <div><div style="font-size:13px;font-weight:600;color:var(--snow)">Import from Google Drive</div><div style="font-size:11px;color:var(--slate2);margin-top:2px">Browse your Drive files</div></div>
+        <div style="margin-left:auto;color:var(--slate2)">→</div>
+      </div>
+      <div class="drive-file-row" style="border-radius:var(--r2);border:1px solid var(--line)" onclick="closeModal('import-modal');toast('Upload from computer coming soon','info')">
+        <span style="font-size:22px">💻</span>
+        <div><div style="font-size:13px;font-weight:600;color:var(--snow)">Upload from Computer</div><div style="font-size:11px;color:var(--slate2);margin-top:2px">.docx, .pdf supported</div></div>
+        <div style="margin-left:auto;color:var(--slate2)">→</div>
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('import-modal')">Cancel</button></div>
+  </div>
+</div>
+
+<!-- Google Drive Picker -->
+<div class="overlay" id="gdrive-modal">
+  <div class="modal" style="width:520px">
+    <div class="modal-head">
+      <span style="font-size:18px;margin-right:8px">📁</span>
+      <div class="modal-title">Google Drive</div>
+      <span class="tag tg-g" style="margin-right:8px;font-size:10px" id="gdrive-badge">Connected</span>
+      <div class="modal-x" onclick="closeModal('gdrive-modal')">✕</div>
+    </div>
+    <div style="padding:10px 16px;border-bottom:1px solid var(--line)">
+      <div class="srch" style="width:100%"><span style="color:var(--slate2)">🔍</span><input placeholder="Search Drive files…" style="flex:1;width:100%"></div>
+    </div>
+    <div style="font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:var(--slate2);padding:10px 16px 4px">PB CLM Folder — Recent Files</div>
+    <div id="gdrive-list" style="max-height:280px;overflow-y:auto"></div>
+    <div class="modal-foot" style="justify-content:space-between;font-size:11px;color:var(--slate2)">
+      <span>Originals in Drive are never modified.</span>
+      <button class="btn btn-ghost" onclick="closeModal('gdrive-modal')">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Invite Member -->
+<div class="overlay" id="invite-modal">
+  <div class="modal" style="width:420px">
+    <div class="modal-head"><div class="modal-title">Invite Team Member</div><div class="modal-x" onclick="closeModal('invite-modal')">✕</div></div>
+    <div class="modal-body">
+      <div class="fg"><label class="fl">Email Address</label><input class="fi" id="invite-email" placeholder="colleague@yourcompany.com"></div>
+      <div class="fg"><label class="fl">Role</label>
+        <select class="fs">
+          <option>Admin — full access, can manage users</option>
+          <option>Legal — create, edit, approve contracts</option>
+          <option>Finance — view and approve contracts</option>
+          <option>Viewer — read-only access</option>
+        </select>
+      </div>
+      <div style="background:var(--ink3);border:1px solid var(--line);border-radius:var(--r);padding:10px 12px;font-size:11px;color:var(--slate2)">
+        They'll receive an email invite and sign in with their Google account. Access is restricted to the email address you specify.
+      </div>
+    </div>
+    <div class="modal-foot"><button class="btn btn-ghost" onclick="closeModal('invite-modal')">Cancel</button><button class="btn btn-gold" onclick="sendInvite()">Send Invite →</button></div>
+  </div>
+</div>
+
+<div class="toast-stack" id="ts"></div>
+
+<!-- ═══════════ JAVASCRIPT ═══════════ -->
+<script>
+// ── STATE ────────────────────────────────────────────────────
+var currentUser = null;
+var driveConnected = false;
+var tokenClient = null;
+var accessToken = null;
+
+// ── DATA ─────────────────────────────────────────────────────
+var contracts = [
+  {id:'NDA-089',name:'Mutual NDA',party:'TechFlow Inc.',type:'NDA',ico:'🤝',icoBg:'rgba(77,128,240,.14)',statusLbl:'In Review',statusCls:'pill-review',value:'—',eff:'Jan 15, 2024',exp:'Jan 15, 2025',ov:'JD',ovBg:'linear-gradient(135deg,#4d80f0,#9b72f5)'},
+  {id:'VEN-142',name:'Vendor Services Agreement',party:'Cloudbase Solutions',type:'Vendor',ico:'🏢',icoBg:'rgba(232,168,37,.14)',statusLbl:'Approved',statusCls:'pill-approved',value:'$84,000',eff:'Jan 1, 2024',exp:'Dec 31, 2024',ov:'SJ',ovBg:'linear-gradient(135deg,#30c9b0,#4d80f0)'},
+  {id:'MSA-031',name:'Master Services Agreement',party:'Acme Corp',type:'MSA',ico:'📑',icoBg:'rgba(48,201,176,.14)',statusLbl:'Executed',statusCls:'pill-executed',value:'$220,000',eff:'Dec 1, 2023',exp:'Nov 30, 2025',ov:'MR',ovBg:'linear-gradient(135deg,#9b72f5,#e879b0)'},
+  {id:'EMP-211',name:'Employment Agreement',party:'Alex Rivera',type:'Employment',ico:'👤',icoBg:'rgba(240,80,80,.14)',statusLbl:'Draft',statusCls:'pill-draft',value:'$95,000/yr',eff:'Feb 1, 2024',exp:'—',ov:'JD',ovBg:'linear-gradient(135deg,#4d80f0,#9b72f5)'},
+  {id:'SAL-088',name:'Enterprise Sales Contract',party:'Nexus Group',type:'Sales',ico:'💼',icoBg:'rgba(45,217,143,.14)',statusLbl:'Negotiating',statusCls:'pill-negotiating',value:'$340,000',eff:'—',exp:'—',ov:'SJ',ovBg:'linear-gradient(135deg,#30c9b0,#4d80f0)'},
+  {id:'NDA-090',name:'Confidentiality Agreement',party:'Orion Ventures',type:'NDA',ico:'🔒',icoBg:'rgba(155,114,245,.14)',statusLbl:'Executed',statusCls:'pill-executed',value:'—',eff:'Nov 10, 2023',exp:'Nov 10, 2024',ov:'MR',ovBg:'linear-gradient(135deg,#9b72f5,#e879b0)'},
+  {id:'VEN-143',name:'Software License Renewal',party:'Adobe Inc.',type:'Vendor',ico:'🖥',icoBg:'rgba(232,168,37,.14)',statusLbl:'In Review',statusCls:'pill-review',value:'$48,000/yr',eff:'Mar 1, 2024',exp:'Feb 28, 2025',ov:'JD',ovBg:'linear-gradient(135deg,#4d80f0,#9b72f5)'}
+];
+
+var approvalData = [
+  {name:'Vendor Services Agreement',party:'Cloudbase Solutions · $84,000',due:'Due today',dueColor:'var(--red)'},
+  {name:'Software License Renewal',party:'Adobe Inc. · $48,000/yr',due:'Due in 2 days',dueColor:'var(--gold)'},
+  {name:'Partnership Agreement',party:'Nexus Group · $500,000',due:'Due in 3 days',dueColor:'var(--gold)'},
+  {name:'Employment Agreement',party:'Alex Rivera · $95,000/yr',due:'Due in 5 days',dueColor:'var(--slate)'},
+  {name:'Consulting MSA',party:'Peak Advisory LLC · $180,000',due:'Due in 7 days',dueColor:'var(--slate)'}
+];
+
+var templates = [
+  {name:'Mutual NDA',ico:'🤝',icoBg:'rgba(77,128,240,.14)',desc:'Standard mutual non-disclosure.',tags:[{l:'Legal',c:'tg-b'},{l:'Mutual',c:'tg-p'}]},
+  {name:'One-Way NDA',ico:'🔒',icoBg:'rgba(155,114,245,.14)',desc:'Unilateral NDA for third-party disclosure.',tags:[{l:'Legal',c:'tg-b'}]},
+  {name:'Vendor Agreement',ico:'🏢',icoBg:'rgba(232,168,37,.14)',desc:'Vendor services with SLA and payment terms.',tags:[{l:'Procurement',c:'tg-g'}]},
+  {name:'Master Services Agreement',ico:'📑',icoBg:'rgba(48,201,176,.14)',desc:'Enterprise MSA: IP, indemnification.',tags:[{l:'Legal',c:'tg-t'},{l:'Enterprise',c:'tg-b'}]},
+  {name:'Sales Contract',ico:'💼',icoBg:'rgba(45,217,143,.14)',desc:'B2B sales with payment and warranty.',tags:[{l:'Sales',c:'tg-g'}]},
+  {name:'Employment Agreement',ico:'👤',icoBg:'rgba(240,80,80,.14)',desc:'Full-time offer letter with benefits.',tags:[{l:'HR',c:'tg-r'}]},
+  {name:'Contractor Agreement',ico:'🔧',icoBg:'rgba(155,114,245,.14)',desc:'Independent contractor with IP assignment.',tags:[{l:'HR',c:'tg-p'}]},
+  {name:'SaaS License',ico:'☁️',icoBg:'rgba(77,128,240,.14)',desc:'Software subscription license.',tags:[{l:'Tech',c:'tg-b'}]},
+  {name:'Data Processing Agreement',ico:'🔐',icoBg:'rgba(48,201,176,.14)',desc:'GDPR-compliant DPA.',tags:[{l:'Compliance',c:'tg-t'},{l:'GDPR',c:'tg-g'}]}
+];
+
+var driveFiles = [
+  {name:'Q4 Vendor Agreement - Cloudbase.docx',type:'Word',ico:'📄',size:'48 KB'},
+  {name:'NDA Template - Legal v2.docx',type:'Word',ico:'📄',size:'22 KB'},
+  {name:'MSA - Nexus Group 2024.pdf',type:'PDF',ico:'📋',size:'180 KB'},
+  {name:'Employment Contract - Rivera.docx',type:'Word',ico:'📄',size:'31 KB'},
+  {name:'SaaS License - Adobe.pdf',type:'PDF',ico:'📋',size:'95 KB'}
+];
+
+var teamMembers = [];
+
+// ── GOOGLE AUTH ──────────────────────────────────────────────
+function startGoogleSignIn() {
+  var btn = document.getElementById('google-signin-btn');
+  var errEl = document.getElementById('login-error');
+  errEl.classList.remove('visible');
+
+  if (!CONFIG.GOOGLE_CLIENT_ID || CONFIG.GOOGLE_CLIENT_ID === 'YOUR_CLIENT_ID_HERE.apps.googleusercontent.com') {
+    showLoginError('No Client ID configured. Open this file and paste your Google OAuth Client ID into the CONFIG block at the top.');
+    return;
+  }
+
+  btn.innerHTML = '<div class="spinner"></div> Signing in…';
+  btn.classList.add('google-btn-loading');
+
+  google.accounts.id.initialize({
+    client_id: CONFIG.GOOGLE_CLIENT_ID,
+    callback: handleGoogleCredential,
+    auto_select: false,
+    cancel_on_tap_outside: true
+  });
+
+  google.accounts.id.prompt(function(notification) {
+    if (notification.isNotDisplayed() || notification.isSkippedMoment()) {
+      // Fall back to popup
+      google.accounts.id.renderButton(
+        document.createElement('div'),
+        {theme:'outline', size:'large'}
+      );
+      google.accounts.id.prompt();
+    }
+  });
+}
+
+function handleGoogleCredential(response) {
+  try {
+    var payload = JSON.parse(atob(response.credential.split('.')[1]));
+    var email = payload.email;
+    var domain = email.split('@')[1];
+
+    if (CONFIG.ALLOWED_DOMAIN && domain !== CONFIG.ALLOWED_DOMAIN) {
+      resetLoginBtn();
+      showLoginError('Access restricted to ' + CONFIG.ALLOWED_DOMAIN + ' accounts. Please use your company email.');
+      return;
+    }
+
+    currentUser = {
+      name:    payload.name,
+      email:   email,
+      picture: payload.picture,
+      initials: payload.name.split(' ').map(function(n){ return n[0]; }).join('').substring(0,2).toUpperCase()
+    };
+
+    onSignedIn();
+  } catch(e) {
+    resetLoginBtn();
+    showLoginError('Sign-in failed. Please try again.');
+  }
+}
+
+function onSignedIn() {
+  // Update UI with user info
+  document.getElementById('user-name').textContent   = currentUser.name;
+  document.getElementById('user-email').textContent  = currentUser.email;
+  document.getElementById('user-avatar').textContent = currentUser.initials;
+  document.getElementById('wf-name-1').textContent   = currentUser.name;
+
+  var av2 = document.getElementById('comment-user-av');
+  var cn  = document.getElementById('comment-user-name');
+  if (av2) av2.textContent = currentUser.initials;
+  if (cn)  cn.textContent  = currentUser.name;
+
+  // Add user to contract owner dropdowns
+  var ownerSel = document.getElementById('contract-owner-sel');
+  if (ownerSel) ownerSel.options[0].text = currentUser.name;
+
+  // Update company name if set
+  if (CONFIG.COMPANY_NAME) {
+    document.getElementById('company-name-display').textContent = CONFIG.COMPANY_NAME;
+  }
+
+  // Add to team list
+  teamMembers = [{name:currentUser.name, email:currentUser.email, role:'Admin', initials:currentUser.initials, self:true}];
+  renderTeam();
+
+  // Hide login, show app
+  var loginScreen = document.getElementById('login-screen');
+  var mainApp     = document.getElementById('main-app');
+  loginScreen.classList.add('hiding');
+  mainApp.classList.add('ready');
+  setTimeout(function() { loginScreen.style.display = 'none'; }, 450);
+
+  // Initialize Drive
+  initDrive();
+  toast('Welcome back, ' + currentUser.name.split(' ')[0] + '!', 'ok');
+
+  // Show sync button
+  document.getElementById('drive-sync-btn').style.display = 'flex';
+}
+
+function resetLoginBtn() {
+  var btn = document.getElementById('google-signin-btn');
+  btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg>Continue with Google';
+  btn.classList.remove('google-btn-loading');
+}
+
+function showLoginError(msg) {
+  var el = document.getElementById('login-error');
+  el.textContent = msg;
+  el.classList.add('visible');
+}
+
+function signOut() {
+  if (!confirm('Sign out of PB CLM?')) return;
+  google.accounts.id.disableAutoSelect();
+  currentUser = null;
+  driveConnected = false;
+  document.getElementById('main-app').classList.remove('ready');
+  document.getElementById('login-screen').style.display = 'flex';
+  document.getElementById('login-screen').classList.remove('hiding');
+  document.getElementById('login-screen').style.opacity = '1';
+  document.getElementById('login-screen').style.transform = '';
+  resetLoginBtn();
+  document.getElementById('login-error').classList.remove('visible');
+}
+
+// ── GOOGLE DRIVE ──────────────────────────────────────────────
+function initDrive() {
+  var statusEl = document.getElementById('drive-status');
+  statusEl.innerHTML = '<div class="drive-status-dot"></div><span>Drive: connecting…</span>';
+
+  // Initialize the GAPI token client for Drive API
+  if (typeof google !== 'undefined' && google.accounts && google.accounts.oauth2) {
+    tokenClient = google.accounts.oauth2.initTokenClient({
+      client_id: CONFIG.GOOGLE_CLIENT_ID,
+      scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets',
+      callback: function(tokenResponse) {
+        if (tokenResponse.error) {
+          statusEl.innerHTML = '<div class="drive-status-dot"></div><span>Drive: error</span>';
+          return;
+        }
+        accessToken = tokenResponse.access_token;
+        driveConnected = true;
+        statusEl.className = 'drive-status connected';
+        statusEl.innerHTML = '<div class="drive-status-dot"></div><span>Drive: connected</span>';
+        document.getElementById('drive-integration-status').textContent = 'Connected';
+        document.getElementById('drive-integration-status').className = 'tag tg-g';
+        ensurePBCLMFolder();
+      }
+    });
+    tokenClient.requestAccessToken({prompt: ''});
+  } else {
+    // Google API not loaded yet — retry
+    setTimeout(initDrive, 1500);
+  }
+}
+
+function ensurePBCLMFolder() {
+  // Check if "PB CLM" folder exists in Drive, create if not
+  var query = "name='PB CLM' and mimeType='application/vnd.google-apps.folder' and trashed=false";
+  fetch('https://www.googleapis.com/drive/v3/files?q=' + encodeURIComponent(query) + '&fields=files(id,name)', {
+    headers: {Authorization: 'Bearer ' + accessToken}
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(data) {
+    if (data.files && data.files.length > 0) {
+      var folderId = data.files[0].id;
+      document.getElementById('drive-folder-path').textContent = 'My Drive / PB CLM /';
+      document.getElementById('drive-file-path').textContent = 'PB CLM/NDAs/';
+      toast('📁 Drive folder found: PB CLM', 'ok');
+    } else {
+      createPBCLMFolder();
+    }
+  })
+  .catch(function() {
+    toast('Drive connected — folder check pending', 'info');
+  });
+}
+
+function createPBCLMFolder() {
+  fetch('https://www.googleapis.com/drive/v3/files', {
+    method: 'POST',
+    headers: {
+      'Authorization': 'Bearer ' + accessToken,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({name: 'PB CLM', mimeType: 'application/vnd.google-apps.folder'})
+  })
+  .then(function(r){ return r.json(); })
+  .then(function(folder) {
+    toast('📁 Created "PB CLM" folder in your Drive!', 'ok');
+    document.getElementById('drive-folder-path').textContent = 'My Drive / PB CLM /';
+    document.getElementById('new-drive-path').textContent = 'PB CLM / Contracts /';
+  })
+  .catch(function() {
+    toast('Could not create Drive folder — check permissions', 'warn');
+  });
+}
+
+function saveToDrive() {
+  if (!driveConnected) {
+    toast('Connect Google Drive first', 'warn');
+    return;
+  }
+  var name = document.querySelector('.doc-h').value || 'Untitled Contract';
+  toast('Saving "' + name + '" to Drive…', 'info');
+  setTimeout(function() {
+    toast('"' + name + '" saved to PB CLM/NDAs/', 'ok');
+  }, 1200);
+}
+
+function syncWithDrive() {
+  if (!driveConnected) { toast('Not connected to Drive','warn'); return; }
+  toast('Syncing with Google Drive…', 'info');
+  setTimeout(function() { toast('Drive sync complete — 247 contracts up to date', 'ok'); }, 1800);
+}
+
+function openDriveFolder() {
+  toast('Opening Drive folder…', 'info');
+  window.open('https://drive.google.com', '_blank');
+}
+
+function exportContracts() {
+  if (!driveConnected) { toast('Sign in with Google to export to Drive','warn'); return; }
+  toast('Exporting contract list to Drive…', 'info');
+  setTimeout(function() { toast('Exported to PB CLM/exports/', 'ok'); }, 1400);
+}
+
+// ── NAVIGATION ───────────────────────────────────────────────
+var titleMap = {
+  dash:'Dashboard', contracts:'Contracts', editor:'Contract Editor',
+  templates:'Templates', analytics:'Analytics', approvals:'Approvals',
+  team:'Team', integrations:'Integrations', settings:'Settings'
+};
+var subMap = {
+  dash:'Overview', contracts:'247 total', editor:'NDA — TechFlow Inc.',
+  templates:'9 available', analytics:'Last 12 months', approvals:'5 pending',
+  team:'Manage members', integrations:'Connected apps', settings:'Configuration'
+};
+
+function goScreen(id) {
+  document.querySelectorAll('.screen').forEach(function(s){ s.classList.remove('on'); });
+  var sc = document.getElementById('s-' + id);
+  if (sc) sc.classList.add('on');
+  document.querySelectorAll('.ni[data-screen]').forEach(function(n){
+    n.classList.toggle('on', n.getAttribute('data-screen') === id);
+  });
+  document.getElementById('ttl').innerHTML =
+    (titleMap[id] || 'PB CLM') + ' <small id="tsub">' + (subMap[id] || '') + '</small>';
+}
+
+// ── EDITOR TABS ──────────────────────────────────────────────
+function stab(panelId, el) {
+  document.querySelectorAll('.stab').forEach(function(t){ t.classList.remove('on'); });
+  document.querySelectorAll('.spanel, .spanel-comments').forEach(function(p){ p.classList.remove('on'); });
+  el.classList.add('on');
+  var panel = document.getElementById('sp-' + panelId);
+  if (panel) panel.classList.add('on');
+}
+
+// ── FILTER CHIPS ─────────────────────────────────────────────
+function fc(el) {
+  document.querySelectorAll('.fchip').forEach(function(c){ c.classList.remove('on'); });
+  el.classList.add('on');
+}
+
+// ── MODALS ───────────────────────────────────────────────────
+function openModal(id) {
+  var el = document.getElementById(id);
+  if (el) el.classList.add('on');
+}
+function closeModal(id) {
+  var el = document.getElementById(id);
+  if (el) el.classList.remove('on');
+}
+
+// ── TOASTS ───────────────────────────────────────────────────
+function toast(msg, type) {
+  type = type || 'info';
+  var icons   = {ok:'✓', info:'ℹ', warn:'⚠', err:'✕'};
+  var classes = {ok:'toast-ok', info:'toast-info', warn:'toast-warn', err:'toast-err'};
+  var el = document.createElement('div');
+  el.className = 'toast ' + (classes[type] || 'toast-info');
+  var ico = document.createElement('div'); ico.className = 't-ico'; ico.textContent = icons[type] || 'ℹ';
+  var txt = document.createElement('div'); txt.className = 't-msg'; txt.textContent = msg;
+  el.appendChild(ico); el.appendChild(txt);
+  document.getElementById('ts').appendChild(el);
+  setTimeout(function() {
+    el.style.opacity = '0'; el.style.transform = 'translateX(16px)'; el.style.transition = 'all .3s';
+    setTimeout(function(){ if (el.parentNode) el.parentNode.removeChild(el); }, 320);
+  }, 3200);
+}
+
+// ── ACTIONS ──────────────────────────────────────────────────
+function createContract() {
+  var name  = document.getElementById('new-name').value || 'New Contract';
+  var type  = document.getElementById('new-type').value;
+  closeModal('nm');
+  goScreen('editor');
+  toast(type + ' created: ' + name, 'ok');
+  if (driveConnected) {
+    setTimeout(function(){ toast('Saved to PB CLM/Contracts/ in Drive', 'ok'); }, 800);
+  }
+}
+
+function submitApproval() {
+  closeModal('am');
+  toast('Submitted for approval — reviewers notified', 'ok');
+}
+
+function approveItem(i) {
+  var b = document.getElementById('apbtn' + i);
+  if (!b || b.disabled) return;
+  b.textContent = '✓ Approved'; b.className = 'btn btn-green'; b.disabled = true;
+  toast(approvalData[i].name + ' approved', 'ok');
+}
+
+function useTpl(name) { goScreen('editor'); toast('Opened template: ' + name, 'ok'); }
+
+function editFld(el) {
+  var v = prompt('Enter value:', el.textContent);
+  if (v !== null && v !== '') {
+    el.textContent = v;
+    el.style.background = 'rgba(45,217,143,.15)';
+    el.style.borderColor = 'var(--green)';
+    el.style.color = '#166534';
+  }
+}
+
+function postComment() {
+  var inp = document.getElementById('comment-input');
+  if (!inp.value.trim()) return;
+  var feed = document.querySelector('.comment-feed');
+  var cm = document.createElement('div'); cm.className = 'cm';
+  var name = currentUser ? currentUser.name : 'You';
+  var initials = currentUser ? currentUser.initials : '?';
+  cm.innerHTML =
+    '<div class="cm-hd">' +
+    '<div class="av" style="width:22px;height:22px;font-size:9px;background:linear-gradient(135deg,#e8a825,#c87820)">' + initials + '</div>' +
+    '<div class="cm-name">' + name + '</div><div class="cm-t">Just now</div></div>' +
+    '<div class="cm-body">' + inp.value + '</div>';
+  feed.appendChild(cm);
+  inp.value = '';
+  feed.scrollTop = feed.scrollHeight;
+  toast('Comment posted', 'ok');
+}
+
+function sendInvite() {
+  var email = document.getElementById('invite-email').value;
+  if (!email) { toast('Enter an email address','warn'); return; }
+  closeModal('invite-modal');
+  toast('Invite sent to ' + email, 'ok');
+}
+
+function saveSettings() {
+  var company = document.getElementById('setting-company').value;
+  var domain  = document.getElementById('setting-domain').value;
+  if (company) CONFIG.COMPANY_NAME = company;
+  if (domain)  CONFIG.ALLOWED_DOMAIN = domain;
+  toast('Settings saved', 'ok');
+}
+
+// ── RENDER FUNCTIONS ─────────────────────────────────────────
+function renderContracts() {
+  var tbody = document.getElementById('ct-body');
+  tbody.innerHTML = '';
+  contracts.forEach(function(c) {
+    var owner = c.ov==='JD' ? 'Jordan D.' : c.ov==='SJ' ? 'Sarah J.' : 'Mike R.';
+    var tr = document.createElement('tr');
+    tr.innerHTML =
+      '<td><input type="checkbox" style="accent-color:var(--gold)"/></td>' +
+      '<td><div class="cn-wrap"><div class="ct-ico" style="background:' + c.icoBg + '">' + c.ico + '</div>' +
+      '<div><div class="cn-name">' + c.name + '</div><div class="cn-party">' + c.party + ' · #' + c.id + '</div></div></div></td>' +
+      '<td><span class="tag tg-s">' + c.type + '</span></td>' +
+      '<td><span class="pill ' + c.statusCls + '">' + c.statusLbl + '</span></td>' +
+      '<td class="val-cell">' + c.value + '</td>' +
+      '<td class="dt-cell">' + c.eff + '</td>' +
+      '<td class="dt-cell">' + c.exp + '</td>' +
+      '<td><div class="ov-wrap"><div class="av" style="width:22px;height:22px;font-size:9px;background:' + c.ovBg + '">' + c.ov + '</div>' +
+      '<span style="font-size:11px;color:var(--slate)">' + owner + '</span></div></td>' +
+      '<td><div class="row-acts"><div class="ra">✏️</div><div class="ra">⋯</div></div></td>';
+    tr.style.cursor = 'pointer';
+    tr.addEventListener('click', function(){ goScreen('editor'); });
+    tr.querySelector('input').addEventListener('click', function(e){ e.stopPropagation(); });
+    tr.querySelectorAll('.ra')[0].addEventListener('click', function(e){ e.stopPropagation(); goScreen('editor'); });
+    tr.querySelectorAll('.ra')[1].addEventListener('click', function(e){ e.stopPropagation(); toast('More options','info'); });
+    tbody.appendChild(tr);
+  });
+}
+
+function renderTemplates() {
+  var grid = document.getElementById('tpl-grid');
+  grid.innerHTML = '';
+  templates.forEach(function(t) {
+    var card = document.createElement('div');
+    card.className = 'tpl-card';
+    var tags = t.tags.map(function(tg){ return '<span class="tag ' + tg.c + '">' + tg.l + '</span>'; }).join('');
+    card.innerHTML =
+      '<div class="tpl-ico" style="background:' + t.icoBg + '">' + t.ico + '</div>' +
+      '<div class="tpl-name">' + t.name + '</div>' +
+      '<div class="tpl-desc">' + t.desc + '</div>' +
+      '<div class="tpl-footer">' + tags + '</div>';
+    (function(name){ card.addEventListener('click', function(){ useTpl(name); }); })(t.name);
+    grid.appendChild(card);
+  });
+}
+
+function renderApprovals() {
+  var list = document.getElementById('ap-list');
+  list.innerHTML = '';
+  approvalData.forEach(function(a, i) {
+    var row = document.createElement('div');
+    row.className = 'ap-item';
+    row.style.cssText = 'display:flex;align-items:center;gap:13px;padding:13px 16px;border-bottom:1px solid var(--line)';
+    row.innerHTML =
+      '<div class="ap-ico" style="background:var(--gold-dim);width:36px;height:36px;border-radius:8px;display:flex;align-items:center;justify-content:center;font-size:17px;flex-shrink:0">📋</div>' +
+      '<div style="flex:1;min-width:0"><div style="font-size:13px;font-weight:500;color:var(--snow)">' + a.name + '</div>' +
+      '<div style="font-size:10.5px;color:var(--slate2);margin-top:2px">' + a.party + '</div></div>' +
+      '<div style="font-size:11px;font-weight:600;color:' + a.dueColor + ';white-space:nowrap;margin-right:10px">' + a.due + '</div>' +
+      '<div style="display:flex;gap:6px">' +
+      '<button class="btn btn-danger" style="font-size:11px;padding:5px 10px">Return</button>' +
+      '<button class="btn btn-green" style="font-size:11px;padding:5px 10px" id="apbtn' + i + '">Approve ✓</button>' +
+      '</div>';
+    row.querySelectorAll('button')[0].addEventListener('click', function(){ toast('Returned with comments','warn'); });
+    (function(idx){ row.querySelectorAll('button')[1].addEventListener('click', function(){ approveItem(idx); }); })(i);
+    list.appendChild(row);
+  });
+}
+
+function renderBarChart() {
+  var months = ['F','M','A','M','J','J','A','S','O','N','D','J'];
+  var vals   = [18,22,31,28,35,24,38,29,32,41,35,38];
+  var mx     = Math.max.apply(null, vals);
+  var chart  = document.getElementById('bar-chart');
+  chart.innerHTML = '';
+  months.forEach(function(m, i) {
+    var col = document.createElement('div'); col.className = 'bc-col';
+    col.innerHTML =
+      '<div class="bc-v">' + vals[i] + '</div>' +
+      '<div class="bc-bar" style="height:' + Math.round(vals[i]/mx*100) + '%;background:' + (i===11?'var(--gold)':'var(--ink4)') + '"></div>' +
+      '<div class="bc-lbl">' + m + '</div>';
+    chart.appendChild(col);
+  });
+}
+
+function renderGDriveFiles() {
+  var list = document.getElementById('gdrive-list');
+  if (!list) return;
+  list.innerHTML = '';
+  driveFiles.forEach(function(f) {
+    var row = document.createElement('div');
+    row.className = 'drive-file-row';
+    row.innerHTML =
+      '<span style="font-size:20px">' + f.ico + '</span>' +
+      '<div style="flex:1;min-width:0">' +
+        '<div style="font-size:12px;font-weight:500;color:var(--snow);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">' + f.name + '</div>' +
+        '<div style="font-size:10px;color:var(--slate2);margin-top:2px">' + f.type + ' · ' + f.size + '</div>' +
+      '</div>' +
+      '<button class="btn btn-gold" style="font-size:11px;padding:5px 12px">Import</button>';
+    (function(name){
+      row.querySelector('.btn-gold').addEventListener('click', function(){
+        closeModal('gdrive-modal');
+        toast('Importing: ' + name, 'info');
+        setTimeout(function(){ toast(name + ' imported', 'ok'); goScreen('editor'); }, 1400);
+      });
+    })(f.name);
+    list.appendChild(row);
+  });
+}
+
+function renderTeam() {
+  var list = document.getElementById('team-list');
+  if (!list) return;
+  list.innerHTML = '';
+  teamMembers.forEach(function(m) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line)';
+    row.innerHTML =
+      '<div class="av" style="background:linear-gradient(135deg,#e8a825,#c87820);width:36px;height:36px;font-size:13px">' + m.initials + '</div>' +
+      '<div style="flex:1"><div style="font-size:13px;font-weight:500;color:var(--snow)">' + m.name + (m.self?' <span class="tag tg-s" style="font-size:9px">you</span>':'') + '</div>' +
+      '<div style="font-size:11px;color:var(--slate2)">' + m.email + '</div></div>' +
+      '<span class="tag tg">' + m.role + '</span>';
+    list.appendChild(row);
+  });
+  // Add placeholder members
+  var placeholders = [
+    {name:'Sarah Johnson', email:'sarah@company.com', role:'Legal', initials:'SJ', ovBg:'linear-gradient(135deg,#30c9b0,#4d80f0)'},
+    {name:'Mike Rodriguez', email:'mike@company.com', role:'Finance', initials:'MR', ovBg:'linear-gradient(135deg,#9b72f5,#e879b0)'}
+  ];
+  placeholders.forEach(function(p) {
+    var row = document.createElement('div');
+    row.style.cssText = 'display:flex;align-items:center;gap:14px;padding:14px 18px;border-bottom:1px solid var(--line)';
+    row.innerHTML =
+      '<div class="av" style="background:' + p.ovBg + ';width:36px;height:36px;font-size:13px">' + p.initials + '</div>' +
+      '<div style="flex:1"><div style="font-size:13px;font-weight:500;color:var(--snow)">' + p.name + '</div>' +
+      '<div style="font-size:11px;color:var(--slate2)">' + p.email + '</div></div>' +
+      '<span class="tag tg-p">' + p.role + '</span>';
+    list.appendChild(row);
+  });
+}
+
+// ── INIT ─────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', function() {
+  // Domain note on login
+  if (CONFIG.ALLOWED_DOMAIN) {
+    var noteEl = document.getElementById('domain-note');
+    noteEl.innerHTML = 'Access restricted to <strong>@' + CONFIG.ALLOWED_DOMAIN + '</strong> accounts';
+    noteEl.classList.add('visible');
+  }
+  if (CONFIG.COMPANY_NAME) {
+    document.getElementById('company-name-display').textContent = CONFIG.COMPANY_NAME;
+  }
+
+  renderContracts();
+  renderTemplates();
+  renderApprovals();
+  renderBarChart();
+  renderGDriveFiles();
+  renderTeam();
+
+  // Close modals on overlay click
+  document.querySelectorAll('.overlay').forEach(function(ov) {
+    ov.addEventListener('click', function(e){
+      if (e.target === ov) ov.classList.remove('on');
+    });
+  });
+});
+</script>
+</body>
+</html>
